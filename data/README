@@ -1,0 +1,7 @@
+This directory should contain:
+
+- flickr8k
+  - dataset.human.max1K.accel3.ord.mfcc.npy
+  - dataset.json
+  - vgg_feats.mat
+  
