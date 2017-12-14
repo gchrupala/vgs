@@ -28,8 +28,8 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
     model.task.train()
 
     print("Params: {}".format(sum([ numpy.prod(param.size()) for param in model.task.parameters() ])))
-    for name, param in model.task.named_parameters():
-        print(name, param.size(), param.requires_grad)
+    #for name, param in model.task.named_parameters():
+    #    print(name, param.size(), param.requires_grad)
     def epoch_eval():
         model.task.eval()
         task = model.task
@@ -57,6 +57,7 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
     costs = Counter()
 
     optimizer = optim.Adam(model.task.parameters(), lr=model.task.config['lr'])
+    optimizer.zero_grad()
     for epoch in range(last_epoch+1, run_config['epochs'] + 1):
         model.task.train()
         random.shuffle(data.data['train'])
@@ -65,8 +66,9 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
                 args = model.task.args(item)
                 args = [torch.autograd.Variable(torch.from_numpy(x)).cuda() for x in args ]
                 loss = model.task.train_cost(*args)
+                optimizer.zero_grad()
                 loss.backward()
-                prenorm = nn.utils.clip_grad_norm(model.task.parameters(), model.task.max_norm)
+                _ = nn.utils.clip_grad_norm(model.task.parameters(), model.task.max_norm)
                 optimizer.step()
                 costs += Counter({'cost':loss.data[0], 'N':1})
                 print(epoch, j, j*data.batch_size, "train", "".join([str(costs['cost']/costs['N'])]))

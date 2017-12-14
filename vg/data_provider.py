@@ -37,7 +37,8 @@ class BasicDataProvider:
         for sentence in image['sentences']:
           sentence['ipa'] = IPA[sentence['sentid']]
     except IOError:
-      sys.stderr.write("Warning: could not read file {}: IPA transcription not available\n".format(ipa_path))
+        pass
+        #sys.stderr.write("Warning: could not read file {}: IPA transcription not available\n".format(ipa_path))
 
     try:
         AUDIO = numpy.load(audio_path, encoding='bytes')
