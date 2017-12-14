@@ -36,26 +36,6 @@ class Linear(nn.Module):
         else:
             return torch.matmul(x, self.w)
 
-
-
-# class Linear(nn.Module):
-#
-#     def __init__(self, in_size, out_size, bias_init='uniform', init_scale=0.04):
-#         super(Linear, self).__init__()
-#         util.autoassign(locals())
-#         self.layer = nn.Linear(in_size, out_size, bias=bias_init is not None)
-#         self.layer.weight.data.uniform_(-init_scale, init_scale)
-#         if isinstance(self.bias_init, numbers.Number):
-#             self.layer.bias.data.uniform_(bias_init)
-#         elif bias_init == 'uniform':
-#             self.layer.bias.data.uniform_(-init_scale, init_scale)
-#         else:
-#             raise AssertionError('unsupported init_scheme')
-#
-#     def forward(self, x):
-#         return self.layer(x)
-
-
 class RHN(nn.Module):
     """Recurrent Highway Network. Based on
     https://arxiv.org/abs/1607.03474 and
@@ -232,7 +212,6 @@ class Compose(nn.Module):
 
 class StackedRHN(nn.Module):
     def __init__(self, size_in, size, depth=2, residual=False, fixed=False, **kwargs):
-# #    def __init__(self, size_in, size, depth=2, dropout_prob=0.0, residual=False, fixed=False, **kwargs):
         super(StackedRHN, self).__init__()
         util.autoassign(locals())
         f = lambda x: Residual(x) if self.residual else x
