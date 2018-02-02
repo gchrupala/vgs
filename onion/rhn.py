@@ -73,6 +73,15 @@ class RHN(nn.Module):
         noise = torch.autograd.Variable(noise)
         return noise
 
+    def make_noise(self, inputs, shape, dropout_p):
+        keep_p = 1 - dropout_p
+        #noise = (1. / keep_p) * torch.bernoulli(torch.zeros(shape) + keep_p)
+        noise = inputs.data.new().resize_(shape)
+        noise.bernoulli_(keep_p)
+        noise.mul_(1. / keep_p)
+        noise = torch.autograd.Variable(noise)
+        return noise
+
     def step(self, i_for_H_t, i_for_T_t, h_tm1, noise_s):
         tanh, sigm = F.tanh, F.sigmoid
         noise_s_for_H = noise_s if self.tied_noise else noise_s[0]
@@ -107,6 +116,9 @@ class RHN(nn.Module):
         # The result is then fed into scan()'s step function, one timestep at a time.
         noise_i_for_H = self.get_dropout_noise((batch_size, self.size_in), self.drop_i)
         noise_i_for_T = self.get_dropout_noise((batch_size, self.size_in), self.drop_i) if not self.tied_noise else noise_i_for_H
+        #noise_i_for_H = self.make_noise(inputs, (batch_size, self.size_in), self.drop_i)
+        #noise_i_for_T = self.make_noise(inputs, (batch_size, self.size_in), self.drop_i) if not self.tied_noise else noise_i_for_H
+
 
         i_for_H = self.apply_dropout(inputs, noise_i_for_H)
         i_for_T = self.apply_dropout(inputs, noise_i_for_T)

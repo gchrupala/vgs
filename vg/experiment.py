@@ -1,8 +1,9 @@
 import numpy
 import random
 import vg.simple_data as sd
+from vg.simple_data import words
 import vg.bundle as bundle
-import vg.evaluate as evaluate
+from vg.evaluate import ranking
 from collections import Counter
 import json
 import onion.util as util
@@ -13,11 +14,6 @@ import sys
 
 def run_train(data, prov, model_config, run_config, eval_config, runid='', resume=False):
 
-    seed  = run_config.get('seed')
-    epoch_evals = []
-    if  seed is not None:
-        random.seed(seed)
-        numpy.random.seed(seed)
     if resume:
         raise NotImplementedError
     else:
@@ -78,9 +74,52 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
         model.save(path='model.r{}.e{}.zip'.format(runid,epoch))
         #epoch_evals.append(epoch_eval())
         #json.dump(epoch_evals[-1], open('scores.{}.json'.format(epoch),'w'))
-    model.save(path='model.r{}.zip'.format(runid))
-    return epoch_evals
+        #numpy.save('scores.{}.npy'.format(epoch), epoch_evals[-1])
 
+    model.save(path='model.r{}.zip'.format(runid))
+#    return epoch_evals
+
+def run_eval(prov, config, encode_sentences=None, encode_images=None, start_epoch=1, runid=''):
+    datapath='../..'
+    for epoch in range(start_epoch, 1+config['epochs']):
+        scores = evaluate(prov,
+                          datapath=datapath,
+                          tokenize=config['tokenize'],
+                          split=config['split'],
+                          task=config['task'],
+                          encode_sentences=encode_sentences,
+                          encode_images=encode_images,
+                          batch_size=config['batch_size'],
+                          model_path='model.r{}.e{}.zip'.format(runid, epoch))
+        numpy.save('scores.{}.npy'.format(epoch), scores)
+        #json.dump(scores, open('scores.{}.json'.format(epoch),'w'))
+
+def evaluate(prov,
+             datapath='.',
+             model_path='model.zip',
+             batch_size=128,
+             task=None,
+             encode_sentences=None,
+             encode_images=None,
+             tokenize=words,
+             split='val'
+            ):
+    model = bundle.load(path=model_path)
+    model.task.cuda()
+    model.task.eval()
+    scaler = model.scaler
+    batcher = model.batcher
+    mapper = batcher.mapper
+    sents = list(prov.iterSentences(split=split))
+    sents_tok =  [ tokenize(sent) for sent in sents ]
+    predictions = encode_sentences(model, sents_tok, batch_size=batch_size) #FIXME this needs to be converted to Variables
+    images = list(prov.iterImages(split=split))
+    img_fs = encode_images(model, [ img['feat'] for img in images ])
+    #img_fs = list(scaler.transform([ image['feat'] for image in images ]))
+    correct_img = numpy.array([ [ sents[i]['imgid']==images[j]['imgid']
+                                  for j in range(len(images)) ]
+                                for i in range(len(sents)) ] )
+    return ranking(img_fs, predictions, correct_img, ns=(1,5,10), exclude_self=False)
 
 def norm(parameters, norm_type=2):
     total_norm = 0

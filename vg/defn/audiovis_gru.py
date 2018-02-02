@@ -6,7 +6,9 @@ import torch
 import onion.util as util
 import torch.nn.functional as F
 import torch.optim as optim
+import torch.autograd
 from onion import rhn, attention, conv
+from vg.simple_data import vector_padder
 
 
 
@@ -70,8 +72,23 @@ class Visual(nn.Module):
         self.training = mode
         return cost
 
+    def predict(self, speech):
+        mode = self.training
+        self.eval()
+        pred = self(speech)
+        self.training = mode
+        return pred
+
     def args(self, item):
         return (item['audio'], item['target_v'])
+
+    def encode_images(self, images):
+        mode = self.training
+        self.eval()
+        rep = F.normalize(self.ImgEncoder(images), p=2, dim=1)
+        self.training = mode
+        return rep
+
 
 def contrastive(i, s, margin=0.2):
         # i: (fixed) image embedding,
@@ -104,7 +121,7 @@ def encode_sentences(model, audios, batch_size=128):
 
     For each audio returns a vector.
     """
-    return numpy.vstack([ model.task.predict(vector_padder(batch))
+    return numpy.vstack([ model.task.predict(torch.autograd.Variable(torch.from_numpy(vector_padder(batch))).cuda()).data.cpu().numpy()
                             for batch in util.grouper(audios, batch_size) ])
 
 def iter_layer_states(model, audios, batch_size=128):
@@ -121,7 +138,7 @@ def layer_states(model, audios, batch_size=128):
 def encode_images(model, imgs, batch_size=128):
     """Project imgs to the joint space using model.
     """
-    return numpy.vstack([ model.task.encode_images(batch)
+    return numpy.vstack([ model.task.encode_images(torch.autograd.Variable(torch.from_numpy(numpy.vstack(batch))).cuda()).data.cpu().numpy()
                           for batch in util.grouper(imgs, batch_size) ])
 
 def symbols(model):

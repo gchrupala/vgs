@@ -45,7 +45,7 @@ class GenericBundle(Bundle):
             self.config['size_vocab'] = config['size_vocab']
         self.task = task(config)
         if weights is not None:
-            assert len(self.task.parameters())==len(weights)
+            assert len(list(self.task.parameters()))==len(weights)
             for param, weight in zip(self.params(), weights):
                 param.data = torch.from_numpy(weight)
 #        self.task.compile()
@@ -63,13 +63,12 @@ class GenericBundle(Bundle):
 
 
 # The following functions work on GenericBundle
-
 def load(path):
     """Load data and reconstruct model."""
     with zipfile.ZipFile(path,'r') as zf:
         buf = io.BytesIO(zf.read('weights.npy'))
-        weights = numpy.load(buf)
-        config  = json.loads(zf.read('config.json'))
+        weights = numpy.load(buf, encoding='bytes')
+        config  = json.loads(zf.read('config.json').decode('utf-8'))
         data  = pickle.loads(zf.read('data.pkl'))
-        task = pickle.loads(b''.join(config['task']))
+        task = pickle.loads(bytes(config['task']))
     return GenericBundle(data, config, task, weights=weights)
