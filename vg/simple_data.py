@@ -59,7 +59,7 @@ def vector_padder(vecs):
 
 class Batcher(object):
 
-    def __init__(self, mapper, pad_end=False):
+    def __init__(self, mapper, pad_end=False, visual=True, erasure=5):
         autoassign(locals())
         self.BEG = self.mapper.BEG_ID
         self.END = self.mapper.END_ID
@@ -82,7 +82,6 @@ class Batcher(object):
 
     def batch(self, gr):
         """Prepare minibatch.
-
         Returns:
         - input string
         - visual target vector
@@ -96,16 +95,41 @@ class Batcher(object):
         target_prev_t = mb_target_t[:,0:-1]
         target_v = numpy.array([ x['img'] for x in gr ], dtype='float32')
         audio = vector_padder([ x['audio'] for x in gr ]) if gr[0]['audio']  is not None else None
+        mid = audio.shape[1] // 2 #FIXME Randomize this somewhat?
+        audio_beg = audio[:, :mid - self.erasure, :]
+        audio_end = audio[:, mid + self.erasure:, :]
+        one3 = audio.shape[1] // 3
+        two3 = one3 * 2
+        audio_1      = audio[:, 1:one3,     :]
+        audio_1_prev = audio[:, 0:one3-1,   :]
+        audio_2      = audio[:, one3:two3,  :] 
+        audio_3      = audio[:, two3+1:,    :]
+        audio_3_prev = audio[:, two3:-1,    :]
+        assert audio_1.shape == audio_1_prev.shape
+        assert audio_3.shape == audio_3_prev.shape
+      
         return { 'input': inp,
-                 'target_v':target_v,
+                 'target_v':target_v if self.visual else None,
                  'target_prev_t':target_prev_t,
                  'target_t':target_t,
-                 'audio': audio }
+                 'audio': audio,
+                 'audio_beg': audio_beg,
+                 'audio_end': audio_end,
+                 'audio_1': audio_1,
+				 'audio_1_prev': audio_1_prev,
+                 'audio_2': audio_2,
+                 'audio_3_prev': audio_3_prev,
+                 'audio_3': audio_3 }
+
+
+
 
 
 class SimpleData(object):
     """Training / validation data prepared to feed to the model."""
-    def __init__(self, provider, tokenize=words, min_df=10, scale=True, scale_input=False, batch_size=64, shuffle=False, limit=None, curriculum=False, val_vocab=False):
+    def __init__(self, provider, tokenize=words, min_df=10, scale=True, scale_input=False,
+                batch_size=64, shuffle=False, limit=None, curriculum=False, val_vocab=False,
+                visual=True, erasure=5):
         autoassign(locals())
         self.data = {}
         self.mapper = IdMapper(min_df=self.min_df)
@@ -131,10 +155,11 @@ class SimpleData(object):
         # VALIDATION
         parts_val['tokens_in'] = self.mapper.transform(parts_val['tokens_in'])
         parts_val['tokens_out'] = self.mapper.transform(parts_val['tokens_out'])
-        parts_val['img'] = self.scaler.transform(parts_val['img'])
+        if self.visual:
+            parts_val['img'] = self.scaler.transform(parts_val['img'])
         parts_val['audio'] = self.audio_scaler.transform(parts_val['audio'])
         self.data['valid'] = outsidein(parts_val)
-        self.batcher = Batcher(self.mapper, pad_end=False)
+        self.batcher = Batcher(self.mapper, pad_end=False, visual=visual, erasure=erasure)
 
     def shuffled(self, xs):
         if not self.shuffle:

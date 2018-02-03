@@ -5,9 +5,9 @@ from scipy.spatial.distance import cdist
 
 def paraphrase_ranking(vectors, group):
     """Rank sentences by projection and return evaluation metrics."""
-    return ranking(vectors, vectors, group, ns=[4], exclude_self=True)
+    return ranking(vectors, vectors, group, ns=[1, 5, 10], exclude_self=True)
 
-def ranking(candidates, vectors, correct, ns=[1,5,10], exclude_self=False):
+def ranking(candidates, vectors, correct, ns=[1, 5, 10], exclude_self=False):
     """Rank `candidates` in order of similarity for each vector and return evaluation metrics.
 
     `correct[i][j]` indicates whether for vector i the candidate j is correct.

@@ -3,7 +3,7 @@ import random
 import vg.simple_data as sd
 from vg.simple_data import words
 import vg.bundle as bundle
-from vg.evaluate import ranking
+from vg.evaluate import ranking, paraphrase_ranking
 from collections import Counter
 import json
 import onion.util as util
@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import sys
+
 
 def run_train(data, prov, model_config, run_config, eval_config, runid='', resume=False):
 
@@ -26,7 +27,25 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
     print("Params: {}".format(sum([ numpy.prod(param.size()) for param in model.task.parameters() ])))
     #for name, param in model.task.named_parameters():
     #    print(name, param.size(), param.requires_grad)
-    def epoch_eval():
+    def epoch_eval_para():
+        model.task.eval()
+        scaler = model.scaler
+        batcher = model.batcher
+        mapper = batcher.mapper
+        sents = list(prov.iterSentences(split=eval_config['split']))
+        sents_tok =  [ eval_config['tokenize'](sent) for sent in sents ]
+        predictions = eval_config['encode_sentences'](model, sents_tok, batch_size=eval_config['batch_size'])
+        correct_para = numpy.array([ [ sents[i]['imgid']==sents[j]['imgid']
+                                      for j in range(len(sents)) ]
+                                    for i in range(len(sents)) ] )
+        result = paraphrase_ranking(predictions, correct_para)
+        model.task.train()
+        return result
+
+    def epoch_eval(para=False):
+        
+        if para:
+            return epoch_eval_para()
         model.task.eval()
         task = model.task
         scaler = model.scaler
@@ -40,7 +59,9 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
         correct_img = numpy.array([ [ sents[i]['imgid']==images[j]['imgid']
                                       for j in range(len(images)) ]
                                     for i in range(len(sents)) ] )
-        return evaluate.ranking(img_fs, predictions, correct_img, ns=(1,5,10), exclude_self=False)
+        result = ranking(img_fs, predictions, correct_img, ns=(1,5,10), exclude_self=False)
+        model.task.train()
+        return result
 
     def valid_loss():
         result = []
@@ -54,6 +75,7 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
 
     optimizer = optim.Adam(model.task.parameters(), lr=model.task.config['lr'])
     optimizer.zero_grad()
+    epoch_evals = []
     for epoch in range(last_epoch+1, run_config['epochs'] + 1):
         model.task.train()
         random.shuffle(data.data['train'])
@@ -71,10 +93,11 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
                 if j % run_config['validate_period'] == 0:
                         print(epoch, j, 0, "valid", "".join([str(numpy.mean(valid_loss()))]))
                 sys.stdout.flush()
+
         model.save(path='model.r{}.e{}.zip'.format(runid,epoch))
-        #epoch_evals.append(epoch_eval())
+        epoch_evals.append(epoch_eval(para=eval_config.get('para', False)))
         #json.dump(epoch_evals[-1], open('scores.{}.json'.format(epoch),'w'))
-        #numpy.save('scores.{}.npy'.format(epoch), epoch_evals[-1])
+        numpy.save('scores.{}.npy'.format(epoch), epoch_evals[-1])
 
     model.save(path='model.r{}.zip'.format(runid))
 #    return epoch_evals
