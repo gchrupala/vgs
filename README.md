@@ -2,9 +2,8 @@
 
 This is a PyTorch rewrite of  https://github.com/gchrupala/visually-grounded-speech.
 
-The PyTorch version of the original Theano Recurrent Highway Network-based model is is slow and buggy. 
-
-The alternative GRU-based model is much faster and more usable.
+- The PyTorch version of the original Theano Recurrent Highway Network-based model is is slow and buggy. 
+- The alternative GRU-based model is much faster and more usable.
 
 The data (Flickr8K speech and image features) needed to run the model is here: https://drive.google.com/file/d/14OVoyKibsslVwgYxxgd-s3dbA4bHUZtf/view?usp=sharing
 Unpack it in the [data](data) directory.
