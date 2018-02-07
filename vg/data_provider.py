@@ -11,10 +11,11 @@ import itertools
 import gzip
 import sys
 import numpy
+import csv
 
 class BasicDataProvider:
   def __init__(self, dataset, root='.', extra_train=False, audio_kind='fbank'):
-
+    self.dataset_name = dataset
     self.root = root
     # !assumptions on folder structure
     self.dataset_root = os.path.join(self.root, 'data', dataset)
@@ -41,11 +42,22 @@ class BasicDataProvider:
         #sys.stderr.write("Warning: could not read file {}: IPA transcription not available\n".format(ipa_path))
 
     try:
+        if self.dataset_name == 'flickr8k':
+            wav2spk = numpy.array(list(csv.reader(open(self.dataset_root + "/wav2spk.txt"), delimiter=' ')))
+            wav2cap = numpy.array(list(csv.reader(open(self.dataset_root + "/wav2capt.txt"), delimiter=' ')))
+            cap2wav = {}
+            for row in wav2cap:
+                cap2wav[row[1]+row[2]] = row[0]
+            W2S = dict(list(wav2spk))
+
         AUDIO = numpy.load(audio_path, encoding='bytes')
         sentid = 0
         for image in self.dataset['images']:
-            for sentence in image['sentences']:
+            for (i, sentence) in enumerate(image['sentences']):
                 sentence['audio'] = AUDIO[sentid]
+                if self.dataset_name == 'flickr8k':
+                    spk = W2S[cap2wav["{}#{}".format(image['filename'], i)]]
+                    sentence['speaker'] = spk
                 sentid += 1
     except IOError:
         sys.stderr.write("Warning: could not read file {}: audio features not available\n".format(audio_path))

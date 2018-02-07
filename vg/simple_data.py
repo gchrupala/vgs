@@ -8,6 +8,8 @@ import onion.util as util
 from  sklearn.preprocessing import StandardScaler
 import string
 import random
+import itertools
+
 # Types of tokenization
 
 def words(sentence):
@@ -59,11 +61,17 @@ def vector_padder(vecs):
 
 class Batcher(object):
 
-    def __init__(self, mapper, pad_end=False, visual=True, erasure=5):
+    def __init__(self, mapper, pad_end=False, visual=True, erasure=(5,5)):
         autoassign(locals())
         self.BEG = self.mapper.BEG_ID
         self.END = self.mapper.END_ID
-
+        try:
+            self.gap_low = self.erasure[0]
+            self.gap_high = self.erasure[1]
+        except:
+            self.gap_low = self.erasure
+            self.gap_high = self.erasure + 1
+        
     def pad(self, xss): # PAD AT BEGINNING
         max_len = max((len(xs) for xs in xss))
         def pad_one(xs):
@@ -96,8 +104,9 @@ class Batcher(object):
         target_v = numpy.array([ x['img'] for x in gr ], dtype='float32')
         audio = vector_padder([ x['audio'] for x in gr ]) if gr[0]['audio']  is not None else None
         mid = audio.shape[1] // 2 #FIXME Randomize this somewhat?
-        audio_beg = audio[:, :mid - self.erasure, :]
-        audio_end = audio[:, mid + self.erasure:, :]
+        gap = numpy.random.randint(self.gap_low, self.gap_high, 1)[0]
+        audio_beg = audio[:, :mid - gap, :]
+        audio_end = audio[:, mid + gap:, :]
         one3 = audio.shape[1] // 3
         two3 = one3 * 2
         audio_1      = audio[:, 1:one3,     :]
@@ -128,7 +137,7 @@ class Batcher(object):
 class SimpleData(object):
     """Training / validation data prepared to feed to the model."""
     def __init__(self, provider, tokenize=words, min_df=10, scale=True, scale_input=False,
-                batch_size=64, shuffle=False, limit=None, curriculum=False, val_vocab=False,
+                batch_size=64, shuffle=False, limit=None, curriculum=False, by_speaker=False, val_vocab=False,
                 visual=True, erasure=5):
         autoassign(locals())
         self.data = {}
@@ -174,18 +183,30 @@ class SimpleData(object):
         # sort data by length
         if self.curriculum:
             data = [self.data['train'][i] for i in numpy.argsort([len(x['tokens_in']) for x in self.data['train']])]
+        # sort data by speaker ID
+        #elif self.by_speaker:
+        #    data = [self.data['train'][i] for i in numpy.argsort([x['speaker'] for x in self.data['train']])]
+
         else:
             data = self.data['train']
-        for bunch in util.grouper(data, self.batch_size*20):
-            bunch_sort = [ bunch[i] for i in numpy.argsort([len(x['tokens_in']) for x in bunch]) ]
-            for item in util.grouper(bunch_sort, self.batch_size):
-                yield self.batcher.batch(item)
+        if self.by_speaker:
+            for x in randomized(by_speaker(self.batcher, data)):
+                yield x
+        else:                    
+            for bunch in util.grouper(data, self.batch_size*20):
+                bunch_sort = [ bunch[i] for i in numpy.argsort([len(x['tokens_in']) for x in bunch]) ]
+                for item in util.grouper(bunch_sort, self.batch_size):
+                    yield self.batcher.batch(item)
 
     def iter_valid_batches(self):
-        for bunch in util.grouper(self.data['valid'], self.batch_size*20):
-            bunch_sort = [ bunch[i] for i in numpy.argsort([len(x['tokens_in']) for x in bunch]) ]
-            for item in util.grouper(bunch_sort, self.batch_size):
-                yield self.batcher.batch(item)
+        if self.by_speaker:
+            for x in by_speaker(self.batcher, self.data['valid']):
+                yield x
+        else:
+            for bunch in util.grouper(self.data['valid'], self.batch_size*20):
+                bunch_sort = [ bunch[i] for i in numpy.argsort([len(x['tokens_in']) for x in bunch]) ]
+                for item in util.grouper(bunch_sort, self.batch_size):
+                    yield self.batcher.batch(item)
 
 
     def dump(self, model_path):
@@ -194,6 +215,15 @@ class SimpleData(object):
                     protocol=pickle.HIGHEST_PROTOCOL)
         pickle.dump(self.batcher, gzip.open(os.path.join(model_path, 'batcher.pkl.gz'), 'w'),
                     protocol=pickle.HIGHEST_PROTOCOL)
+
+def by_speaker(batcher, data, batch_size=32):
+      speaker = lambda x: x['speaker']
+      for _, bunch in itertools.groupby(sorted(data, key=speaker), speaker):
+          for item in util.grouper(bunch, batch_size):
+             yield batcher.batch(item)
+
+def randomized(data):
+    return sorted(data, key= lambda _: random.random())
 
 def arrange(data, tokenize=words, limit=None):
     for i,image in enumerate(data):
@@ -204,7 +234,8 @@ def arrange(data, tokenize=words, limit=None):
             yield {'tokens_in':  toks,
                    'tokens_out': toks,
                    'audio':       sent.get('audio'),
-                   'img':        image['feat']}
+                   'img':        image['feat'],
+                   'speaker':    sent.get('speaker') }
 
 
 def insideout(ds):
