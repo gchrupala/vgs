@@ -3,7 +3,6 @@ import logging
 import python_speech_features as psf
 import scipy.io.wavfile as wav
 import argparse
-from multiprocessing import Pool
 import onion.util as util
 
 def main():
@@ -21,10 +20,11 @@ def main():
     args = parser.parse_args()
     args.func(args)    
 
-def merge(args):
-    data = np.hstack([ np.load("{}.{}.npy".format(args.prefix, i)) for i in range(0,230) ])
-    np.save(args.prefix + ".npy", data)
-    
+def load_places(prefix):
+    data = [ arr for i in range(203) for arr in np.load("{}.{}.npy".format(prefix, i)) ]
+    wavs = get_wavs('places')
+    return dict(zip(wavs, data))
+   
 def mfcc(args):
     files = get_wavs(args.dataset)
     output = map(extract_mfcc, files)    
