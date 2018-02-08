@@ -25,7 +25,7 @@ class Encoder(nn.Module):
         self.RNN = nn.GRU(self.filter_size, self.size, self.depth, batch_first=True)
 
     def forward(self, input):
-        # FIXME move cuda call out of forward
+
         out, last = self.RNN(self.Conv(input), self.h0.expand(self.depth, input.size(0), self.size).cuda())
         return out
 
