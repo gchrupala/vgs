@@ -4,6 +4,8 @@ import python_speech_features as psf
 import scipy.io.wavfile as wav
 import argparse
 import onion.util as util
+from vg.util import parse_map
+import h5py
 
 def main():
     logging.getLogger().setLevel('INFO')
@@ -12,24 +14,61 @@ def main():
     mfcc_p = commands.add_parser('mfcc')
     mfcc_p.set_defaults(func=mfcc)
     mfcc_p.add_argument('--dataset',  help='Dataset to process: flickr8k or places')
-    mfcc_p.add_argument('--output',   help='Path to file where output will be saved', default='mfcc.npy')
+    mfcc_p.add_argument('--output',   help='Path to file where output will be saved', default='mfcc.h5')
 
     merge_p = commands.add_parser('merge')
     merge_p.set_defaults(func=merge)
     merge_p.add_argument('--prefix', help='Prefix of the input files')
+    merge_p.add_argument('--output', help='Path to file where output will be saved', default='data.h5')
     args = parser.parse_args()
     args.func(args)    
 
-def load_places(prefix):
-    data = [ arr for i in range(203) for arr in np.load("{}.{}.npy".format(prefix, i)) ]
-    wavs = get_wavs('places')
-    return dict(zip(wavs, data))
+
+def merge(args):
+    root = "/exp/gchrupal/corpora/placesaudio_distro_part_1"
+    data = ( arr for i in range(230) for arr in np.load("{}.{}.npy".format(args.prefix, i)) )
+    M = parse_map(open(root + "/" + "metadata/utt2wav"))
+    with h5py.File(args.output, 'w') as f:
+        for key, arr in zip(M.keys(), data):
+            f.create_dataset(key, data=arr)
+    
+
    
+def mfcc_h5(args):
+    if args.dataset != 'places':
+        raise NotImplementedError
+    with h5py.File(args.output, 'w') as f:
+        root = "/exp/gchrupal/corpora/placesaudio_distro_part_1"
+        M = parse_map(open(root + "/" + "metadata/utt2wav"))        
+        for key, wav in M.items():
+            path =  root + "/" + wav
+            arr = extract_mfcc(path)
+            if arr is not None:
+                f.create_dataset(key, data=arr)
+   
+
 def mfcc(args):
-    files = get_wavs(args.dataset)
-    output = map(extract_mfcc, files)    
-    for i, chunk in enumerate(util.grouper(output, 1000)):
-        np.save("{}.{}".format(args.output, i), chunk)
+    if args.dataset == 'places':
+        root = "/exp/gchrupal/corpora/placesaudio_distro_part_1"    
+        M = parse_map(open(root + "/metadata/utt2wav"))        
+    elif args.dataset == 'flickr8k':
+        def parse(lines):
+            M = {}
+            for line in lines:
+                wav, jpg, no = line.split()
+                M[wav] = "wavs/" + wav
+            return M
+        root = "/exp/gchrupal/corpora/flickr_audio/"
+        M = parse(open(root + "/wav2capt.txt"))
+    else:
+        raise NotImplementedError
+    D = {}
+    for key, wav in M.items():
+            path =  root + "/" + wav
+            arr = extract_mfcc(path)
+            if arr is not None:
+                D[key] =arr
+    np.save(args.output, D)
    
 import time
 import timeout_decorator
