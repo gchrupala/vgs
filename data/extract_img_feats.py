@@ -128,5 +128,12 @@ def img_features(paths, cnn="vgg16", resize=None, crop_size=224, tencrop=False):
             # Take average mean over all crops
             features = np.array(X)
             features = np.mean(features, axis=0)
+        # No cropping case
+        else:
+            x = keras_image.img_to_array(image)
+            x = np.expand_dims(x, axis=0)
+            x = preprocess_input(x)
+            features = model.predict(x).squeeze()
+
         FEATS[i] = features
     return FEATS
