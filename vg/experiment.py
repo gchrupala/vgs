@@ -11,7 +11,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import sys
-
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import scipy.stats
 
 def run_train(data, prov, model_config, run_config, eval_config, runid='', resume=False):
 
@@ -27,6 +29,28 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
     print("Params: {}".format(sum([ numpy.prod(param.size()) for param in model.task.parameters() ])))
     #for name, param in model.task.named_parameters():
     #    print(name, param.size(), param.requires_grad)
+
+    if eval_config['mode'] == 'corr':
+        #train_text = (s['raw'] for s in prov.iterSentences(split='train'))
+        split_text = (s['raw'] for s in prov.iterSentences(split=eval_config['split']))
+        vec = TfidfVectorizer(analyzer='word')
+        #vec.fit_transform(train_text)
+        split_vecs = vec.fit_transform(split_text)        
+        SIM_tfidf = cosine_similarity(split_vecs)        
+
+    def epoch_eval_corr():
+        model.task.eval()
+        scaler = model.scaler
+        batcher = model.batcher
+        mapper = batcher.mapper
+        sents = list(prov.iterSentences(split=eval_config['split']))
+        sents_tok =  [ eval_config['tokenize'](sent) for sent in sents ]
+        predictions = eval_config['encode_sentences'](model, sents_tok, batch_size=eval_config['batch_size'])
+        SIM_pred = cosine_similarity(predictions)
+        result = scipy.stats.spearmanr(SIM_tfidf.flatten(), SIM_pred.flatten()) #FIXME only take upper triangular
+        model.task.train() 
+        return result
+
     def epoch_eval_para():
         model.task.eval()
         scaler = model.scaler
@@ -42,10 +66,14 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
         model.task.train()
         return result
 
-    def epoch_eval(para=False):
-        
-        if para:
+    def epoch_eval(mode='image', para=False):
+        if para: # compatibility 
+            mode = 'para'
+        if mode == 'para':
             return epoch_eval_para()
+        elif mode == 'corr':
+            return epoch_eval_corr()
+        # otherwise image
         model.task.eval()
         task = model.task
         scaler = model.scaler
@@ -92,10 +120,12 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
                 print(epoch, j, j*data.batch_size, "train", "".join([str(costs['cost']/costs['N'])]))
                 if j % run_config['validate_period'] == 0:
                         print(epoch, j, 0, "valid", "".join([str(numpy.mean(valid_loss()))]))
+                        epoch_evals.append(epoch_eval(mode=eval_config.get('mode', 'image'), para=eval_config.get('para', False)))
+                        numpy.save('scores.{}.{}.npy'.format(epoch,j), epoch_evals[-1])
                 sys.stdout.flush()
-
+                # FIXME just testing
         model.save(path='model.r{}.e{}.zip'.format(runid,epoch))
-        epoch_evals.append(epoch_eval(para=eval_config.get('para', False)))
+        epoch_evals.append(epoch_eval(mode=eval_config.get('mode', 'image'), para=eval_config.get('para', False)))
         #json.dump(epoch_evals[-1], open('scores.{}.json'.format(epoch),'w'))
         numpy.save('scores.{}.npy'.format(epoch), epoch_evals[-1])
 

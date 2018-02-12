@@ -234,7 +234,7 @@ def arrange(data, tokenize=words, limit=None):
             yield {'tokens_in':  toks,
                    'tokens_out': toks,
                    'audio':       sent.get('audio'),
-                   'img':        image['feat'],
+                   'img':        image.get('feat'),
                    'speaker':    sent.get('speaker') }
 
 
