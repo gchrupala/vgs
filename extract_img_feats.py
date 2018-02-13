@@ -1,5 +1,5 @@
 import sys
-
+import os
 #TODO not the most elegant solution
 # Need to clone https://github.com/GKalliatakis/Keras-VGG16-places365
 sys.path.append("/home/u1257964/Keras-VGG16-places365/")
@@ -11,63 +11,9 @@ from keras.applications.vgg19 import VGG19
 from keras.applications.vgg16 import preprocess_input as preprocess_vgg16
 from keras.applications.vgg19 import preprocess_input as preprocess_vgg19
 from places_utils import preprocess_input as preprocess_vgg16hybrid
-from PIL import Image, ImageOps
+from torchvision.transforms import functional as F
 import numpy as np
-
-
-def resize_image(img, size, interpolation=Image.BILINEAR):
-    """Resize the input PIL Image to the given size. From torchvision
-
-        img (PIL Image): Image to be resized.
-        size (sequence or int): Desired output size. If size is a sequence like
-            (h, w), the output size will be matched to this. If size is an int,
-            the smaller edge of the image will be matched to this number maintaing
-            the aspect ratio. i.e, if height > width, then image will be rescaled to
-            (size * height / width, size)
-        interpolation (int, optional): Desired interpolation. Default is
-            ``PIL.Image.BILINEAR``
-
-    Returns:
-        PIL Image: Resized image.
-    """
-    if not _is_pil_image(img):
-        raise TypeError('img should be PIL Image. Got {}'.format(type(img)))
-    if not (isinstance(size, int) or (isinstance(size, collections.Iterable) and len(size) == 2)):
-        raise TypeError('Got inappropriate size arg: {}'.format(size))
-
-    if isinstance(size, int):
-        w, h = img.size
-        if (w <= h and w == size) or (h <= w and h == size):
-            return img
-        if w < h:
-            ow = size
-            oh = int(size * h / w)
-            return img.resize((ow, oh), interpolation)
-        else:
-            oh = size
-            ow = int(size * w / h)
-            return img.resize((ow, oh), interpolation)
-    else:
-        return img.resize(size[::-1], interpolation)
-
-
-def crop_image(image, crop_size=224, pos="c", hflip=False):
-    """Crop image.
-    
-    pos: str, [c, tl, bl, tr, br]
-               (c)enter, (t)op, (b)ottom, (l)eft, (r)ight
-    """
-    if hflip:
-        image = ImageOps.mirror(image)
-    w, h = image.size
-    boxes = {"tl": (0, 0, crop_size, crop_size),
-             "tr": (w-crop_size, 0, w, h-(h-crop_size)),
-             "br": (0, h-crop_size, crop_size, h), 
-             "bl": (w-crop_size, h-crop_size, w, h), 
-             "c": (w/2 - crop_size/2, h/2 - crop_size/2,
-                   w/2 + crop_size/2, h/2 + crop_size/2)}
-    image = image.crop(boxes[pos])
-    return image
+from tqdm import tqdm
 
 
 def img_features(paths, cnn="vgg16", resize=None, crop_size=224, tencrop=False):
@@ -102,14 +48,14 @@ def img_features(paths, cnn="vgg16", resize=None, crop_size=224, tencrop=False):
     else:
         raise NotImplementedError
     model.trainable = False  # Saving space
-    for i, img_path in enumerate(paths):
+    for i, img_path in tqdm(list(enumerate(paths))):
         # Read image and resize with bilinear interpolation if given
         image = keras_image.load_img(img_path)
         if resize:
-            image = resize_image(image)
+            image = F.resize(image, resize)
         # Take center crop and forward pass
         if crop_size and not tencrop:
-            image = crop_image(image, crop_size=crop_size, pos="c", hflip=False)
+            image = F.center_crop(image, crop_size)
             x = keras_image.img_to_array(image)
             x = np.expand_dims(x, axis=0)
             x = preprocess_input(x)
@@ -117,14 +63,13 @@ def img_features(paths, cnn="vgg16", resize=None, crop_size=224, tencrop=False):
         # Apply 10crop strategy from order-embeddings https://arxiv.org/abs/1511.06361
         elif tencrop:
             X = []
-            for f in [True, False]:
-                for p in ["c", "tl", "bl", "tr", "br"]:
-                    img = crop_image(image, crop_size=crop_size, pos=p, hflip=f)
-                    x = keras_image.img_to_array(img)
-                    x = np.expand_dims(x, axis=0)
-                    x = preprocess_input(x)
-                    feat = model.predict(x).squeeze()
-                    X.append(feat)
+            imgs = F.ten_crop(image, crop_size)
+            for img in imgs:
+                x = keras_image.img_to_array(img)
+                x = np.expand_dims(x, axis=0)
+                x = preprocess_input(x)
+                feat = model.predict(x).squeeze()
+                X.append(feat)
             # Take average mean over all crops
             features = np.array(X)
             features = np.mean(features, axis=0)
@@ -136,4 +81,15 @@ def img_features(paths, cnn="vgg16", resize=None, crop_size=224, tencrop=False):
             features = model.predict(x).squeeze()
 
         FEATS[i] = features
+        image.close()
     return FEATS
+
+def test():
+    root = "/roaming/u1257964/Places205/data/vision/torralba/deeplearning/images256/a/abbey/"
+    paths = os.listdir("/roaming/u1257964/Places205/data/vision/torralba/deeplearning/images256/a/abbey/")
+    paths = list(map(lambda x: os.path.join(root, x), paths))
+    m = img_features(paths, crop_size=224, cnn="vgg16")
+    print(m)
+
+if __name__ == "__main__":
+    test()
