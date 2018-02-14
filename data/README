@@ -5,6 +5,8 @@ This directory should contain:
   - dataset.json
   - vgg_feats.mat
   
+- coco
+- places
 
 DATASETS
 
