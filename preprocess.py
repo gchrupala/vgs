@@ -1,7 +1,8 @@
 import numpy as np
 import logging
 import python_speech_features as psf
-import scipy.io.wavfile as wav
+# import scipy.io.wavfile as wav
+import soundfile as sf
 import argparse
 from vg.util import parse_map
 import h5py
@@ -86,7 +87,7 @@ import timeout_decorator
 def extract_mfcc(f, truncate=20):
     logging.info("Extracting features from {}".format(f))
     try:
-        (rate, sig) = wav.read(f)
+        (sig, rate) = sf.read(f)
         max_len = truncate*rate
     except:
         logging.warning("Error reading file {}".format(f))
