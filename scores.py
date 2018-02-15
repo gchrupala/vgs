@@ -11,7 +11,7 @@ def main():
     commands = parser.add_subparsers()
     retrieve_p = commands.add_parser('retrieve')
     retrieve_p.set_defaults(func=retrieve)
-    retrieve_p.add_argument('--dir', help='Target directory', default=".")
+    retrieve_p.add_argument('dir', nargs='?', help='Target directory', default=".")
 
     correlate_p = commands.add_parser('correlate')
     correlate_p.add_argument('--dir', help='Target directory', default=".")
