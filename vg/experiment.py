@@ -30,7 +30,7 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
     #for name, param in model.task.named_parameters():
     #    print(name, param.size(), param.requires_grad)
 
-    if eval_config['mode'] == 'corr':
+    if eval_config.get('mode') == 'corr':
         #train_text = (s['raw'] for s in prov.iterSentences(split='train'))
         split_text = (s['raw'] for s in prov.iterSentences(split=eval_config['split']))
         vec = TfidfVectorizer(analyzer='word')
@@ -51,12 +51,13 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
         model.task.train() 
         return result
 
-    def epoch_eval_para():
+    def epoch_eval_para(flickr=False):
         model.task.eval()
         scaler = model.scaler
         batcher = model.batcher
         mapper = batcher.mapper
-        sents = list(prov.iterSentences(split=eval_config['split']))
+        theprov = prov.flickr if flickr else prov
+        sents = list(theprov.iterSentences(split=eval_config['split']))
         sents_tok =  [ eval_config['tokenize'](sent) for sent in sents ]
         predictions = eval_config['encode_sentences'](model, sents_tok, batch_size=eval_config['batch_size'])
         correct_para = numpy.array([ [ sents[i]['imgid']==sents[j]['imgid']
@@ -66,11 +67,11 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
         model.task.train()
         return result
 
-    def epoch_eval(mode='image', para=False):
+    def epoch_eval(mode='image', para=False, flickr=False):
         if para: # compatibility 
             mode = 'para'
         if mode == 'para':
-            return epoch_eval_para()
+            return epoch_eval_para(flickr=flickr)
         elif mode == 'corr':
             return epoch_eval_corr()
         # otherwise image
@@ -103,7 +104,6 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
 
     optimizer = optim.Adam(model.task.parameters(), lr=model.task.config['lr'])
     optimizer.zero_grad()
-    epoch_evals = []
     for epoch in range(last_epoch+1, run_config['epochs'] + 1):
         model.task.train()
         random.shuffle(data.data['train'])
@@ -117,17 +117,15 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
                 _ = nn.utils.clip_grad_norm(model.task.parameters(), model.task.max_norm)
                 optimizer.step()
                 costs += Counter({'cost':loss.data[0], 'N':1})
-                print(epoch, j, j*data.batch_size, "train", "".join([str(costs['cost']/costs['N'])]))
+                print(epoch, j, j*data.batch_size, item.get('speaker', 'SPK'), "train", "".join([str(costs['cost']/costs['N'])]))
                 if j % run_config['validate_period'] == 0:
                         print(epoch, j, 0, "valid", "".join([str(numpy.mean(valid_loss()))]))
-                        epoch_evals.append(epoch_eval(mode=eval_config.get('mode', 'image'), para=eval_config.get('para', False)))
-                        numpy.save('scores.{}.{}.npy'.format(epoch,j), epoch_evals[-1])
                 sys.stdout.flush()
-                # FIXME just testing
         model.save(path='model.r{}.e{}.zip'.format(runid,epoch))
-        epoch_evals.append(epoch_eval(mode=eval_config.get('mode', 'image'), para=eval_config.get('para', False)))
-        #json.dump(epoch_evals[-1], open('scores.{}.json'.format(epoch),'w'))
-        numpy.save('scores.{}.npy'.format(epoch), epoch_evals[-1])
+        scores = epoch_eval(mode=eval_config.get('mode', 'image'), 
+                            para=eval_config.get('para', False), 
+                            flickr=eval_config.get('flickr', False))
+        numpy.save('scores.{}.npy'.format(epoch), scores)
 
     model.save(path='model.r{}.zip'.format(runid))
 #    return epoch_evals
@@ -165,7 +163,7 @@ def evaluate(prov,
     mapper = batcher.mapper
     sents = list(prov.iterSentences(split=split))
     sents_tok =  [ tokenize(sent) for sent in sents ]
-    predictions = encode_sentences(model, sents_tok, batch_size=batch_size) #FIXME this needs to be converted to Variables
+    predictions = encode_sentences(model, sents_tok, batch_size=batch_size) 
     images = list(prov.iterImages(split=split))
     img_fs = encode_images(model, [ img['feat'] for img in images ])
     #img_fs = list(scaler.transform([ image['feat'] for image in images ]))

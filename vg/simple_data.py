@@ -128,7 +128,8 @@ class Batcher(object):
 				 'audio_1_prev': audio_1_prev,
                  'audio_2': audio_2,
                  'audio_3_prev': audio_3_prev,
-                 'audio_3': audio_3 }
+                 'audio_3': audio_3,
+                 'speaker': gr[0]['speaker'] }
 
 
 
@@ -183,10 +184,6 @@ class SimpleData(object):
         # sort data by length
         if self.curriculum:
             data = [self.data['train'][i] for i in numpy.argsort([len(x['tokens_in']) for x in self.data['train']])]
-        # sort data by speaker ID
-        #elif self.by_speaker:
-        #    data = [self.data['train'][i] for i in numpy.argsort([x['speaker'] for x in self.data['train']])]
-
         else:
             data = self.data['train']
         if self.by_speaker:

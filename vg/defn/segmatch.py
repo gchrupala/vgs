@@ -50,21 +50,28 @@ class Audio(nn.Module):
         self.ProjBeg = nn.Linear(config['size'], config['size_target'])
         self.ProjEnd = nn.Linear(config['size'], config['size_target'])
 
-
+    def score(self, x, y):
+        return F.cosine_similarity(x, y, dim=1)
+        
     def forward(self, speech):
         return F.normalize(self.ProjBeg(self.Attn(self.Encode(speech))), p=2, dim=1)
 
-    def cost(self, end, beg_encoded):
+    def cost(self, beg, end):
+        beg_encoded = F.normalize(self.ProjBeg(self.Attn(self.Encode(beg))), p=2, dim=1)
         end_encoded = F.normalize(self.ProjEnd(self.Attn(self.Encode(end))), p=2, dim=1)
-        return contrastive(end_encoded, beg_encoded, margin=self.margin_size)
+        #N = beg_encoded.size(0)
+        #X, Y = pairwise(beg_encoded, end_encoded)
+        #scores = self.score(X, Y).view(N, N)
+        scores = cosine_matrix(beg_encoded, end_encoded) 
+        return contrastive2(scores, margin=self.margin_size)
 
-    def train_cost(self, speech, image):
-        return self.cost(image, self(speech))
+    def train_cost(self, beg, end):
+        return self.cost(beg, end)
 
-    def test_cost(self, speech, image):
+    def test_cost(self, beg, end):
         mode = self.training
         self.eval()
-        cost = self.cost(image, self(speech))
+        cost = self.cost(beg, end)
         self.training = mode
         return cost
 
@@ -79,6 +86,29 @@ class Audio(nn.Module):
         return (item['audio_beg'], item['audio_end'])
 
 
+def pairwise(A, B):
+    # A, B: NxM
+    assert A.size() == B.size()
+    N = A.size(0)
+    M = A.size(1)
+    A_ = A.repeat(N, 1)
+    B_ = B.unsqueeze(1).expand(N, N, M).contiguous().view(N*N, M)
+    return A_, B_
+
+def contrastive2(score_matrix, margin=0.2):
+        # i: (fixed) image embedding,
+        # s: sentence embedding
+        errors = - score_matrix
+        diagonal = diag(errors)
+        # compare every diagonal score to scores in its column (all contrastive images for each sentence)
+        cost_s = torch.clamp(margin - errors + diagonal, min=0)
+        # all contrastive sentences for each image
+        cost_i = torch.clamp(margin - errors + diagonal.view(-1, 1), min=0)
+        cost_tot = cost_s + cost_i
+        # clear diagonals
+        I = torch.autograd.Variable(torch.eye(cost_tot.size(0)), requires_grad=True).cuda()
+        cost_tot = (1-I) * cost_tot
+        return cost_tot.mean()
 
 def contrastive(i, s, margin=0.2):
         # i: (fixed) image embedding,
