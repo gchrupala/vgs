@@ -30,7 +30,7 @@ def img_features(paths, cnn="vgg16", resize=None, crop_size=224, tencrop=False):
         print("If tencrop is True please provide crop size")
         raise NameError
     out_dim = 4096
-    FEATS = np.zeros((len(paths), out_dim))
+    FEATS = np.zeros((len(paths), out_dim), dtype="float32")
     if cnn == "vgg16":
         base_model = VGG16(weights="imagenet")
         model = Model(inputs=base_model.input, outputs=base_model.get_layer('fc2').output)        

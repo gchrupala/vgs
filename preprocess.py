@@ -1,3 +1,5 @@
+import os
+import csv
 import numpy as np
 import logging
 import python_speech_features as psf
@@ -7,14 +9,14 @@ import argparse
 from vg.util import parse_map
 import h5py
 from extract_img_feats import img_features
-
+import sys
 def main():
     logging.getLogger().setLevel('INFO')
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers()
     mfcc_p = commands.add_parser('mfcc')
     mfcc_p.set_defaults(func=mfcc)
-    mfcc_p.add_argument('--dataset',  help='Dataset to process: flickr8k or places')
+    mfcc_p.add_argument('--dataset',  help='Dataset to process: flickr8k, places or librispeech')
     mfcc_p.add_argument('--output',   help='Path to file where output will be saved', default='mfcc.h5')
 
     merge_p = commands.add_parser('merge')
@@ -71,6 +73,37 @@ def mfcc(args):
             return M
         root = "/exp/gchrupal/corpora/flickr_audio/"
         M = parse(open(root + "/wav2capt.txt"))
+    # Produces .npy file, but also a .csv with meta-data
+    elif args.dataset == "librispeech":
+        root = "/roaming/u1257964/LibriSpeech/LibriSpeech/"
+        paths = os.walk(root, topdown=False)
+        csv_file = open(args.output + ".csv", "w")
+        csv_writer = csv.writer(csv_file, delimiter="\t")
+        csv_writer.writerow(["PATH", "SPEAKER", "CHAPTER", "TRANSCRIPT"])
+        D = {}
+        for i, p in enumerate(paths):
+            # Only consider deepest directories and avoid root
+            if p[2] and p[0] != root:
+                # Get the transcript
+                txt = list(filter(lambda x: x.endswith(".txt"), p[2]))[0]
+                trans = open(os.path.join(p[0], txt))
+                # Take SPEAKER, CHAPTER and TRANSCRIPT info from the transcript file
+                for line in trans:
+                    l = line.split()
+                    f, t = l[0] + ".flac", " ".join(l[1:])
+                    person, chapter, _ = f.split("-")
+                    path = os.path.join(p[0], f)
+                    arr = extract_mfcc(path)
+                    if arr is not None:
+                        D[f] = arr
+                        csv_writer.writerow([path, person, chapter, t])
+                    else:
+                        print("NO")
+                trans.close()
+            print(i)
+        csv_file.close()
+        np.save(args.output, D)
+        return
     else:
         raise NotImplementedError
     D = {}
@@ -100,15 +133,6 @@ def extract_mfcc(f, truncate=20):
         logging.warning("Error extracting features from file {}".format(f))
         return None
 
-def get_wavs(dataset):
-    if dataset == "places":
-        root = "/exp/gchrupal/corpora/placesaudio_distro_part_1"
-        names = [ root + "/" + line.split()[1] for line in open(root + "/" + "metadata/utt2wav") ]
-        return names
-    elif dataset == "flickr8k":
-        raise NotImplementedError
-    else:
-        raise ValueError ("Unknown dataset {}".format(dataset))
 
 def get_imgs(dataset):
     if dataset == "places":
