@@ -18,5 +18,4 @@ class SelfAttention(nn.Module):
 
 def softmax_time(x):
     """Input has shape Batch x Time x 1. Return softmax over dimension Time."""
-    B, T, _ = x.size()
-    return F.softmax(x.view((B, T))).view((B, T, 1))
+    return F.softmax(x, dim=1)

@@ -16,6 +16,7 @@ class Provider:
     self.dataset_name = dataset
     self.audio_kind = audio_kind
     self.audiofile = "{}/data/places/places_mfcc.npy".format(self.root)
+    self.imagefile = "{}/data/places/placeimgsfeatsvgg19.npy".format(self.root)
     
     self.utt2ASR = parse_map(open("{}/data/places/metadata/utt2ASR".format(self.root)))
     self.utt2wav = parse_map(open("{}/data/places/metadata/utt2wav".format(self.root)))
@@ -24,12 +25,13 @@ class Provider:
     self.id = dict(train = set(line.strip() for line in open("{}/data/places/lists/acl_2017_train_uttids".format(self.root))),
                    val = set(line.strip() for line in open("{}/data/places/lists/acl_2017_val_uttids".format(self.root))))
     self.audio = np.load(self.audiofile).item(0)
-
+    self.imageid = [ line.split()[1] for line in open("{}/data/places/metadata/utt2image".format(self.root)) ]
+    self.images = dict((imgid, feat) for imgid, feat in zip(self.imageid, np.load(self.imagefile)))
    
   def iterImages(self, split='train', shuffle=False):
 
     for sent in self.iterSentences(split=split, shuffle=shuffle):
-        image = dict(sentences=[sent], imgid=sent['imgid'], feat=np.zeros(1))
+        image = dict(sentences=[sent], imgid=sent['imgid'], feat=self.images[sent['imgid']])
         yield image
 
   def iterSentences(self, split='train', shuffle=False):
