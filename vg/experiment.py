@@ -84,7 +84,7 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
         sents_tok =  [ eval_config['tokenize'](sent) for sent in sents ]
         predictions = eval_config['encode_sentences'](model, sents_tok, batch_size=eval_config['batch_size'])
         images = list(prov.iterImages(split=eval_config['split']))
-        img_fs = imaginet.task.encode_images(model, [ img['feat'] for img in images ])
+        img_fs = eval_config['encode_images'](model, [ img['feat'] for img in images ])
         correct_img = numpy.array([ [ sents[i]['imgid']==images[j]['imgid']
                                       for j in range(len(images)) ]
                                     for i in range(len(sents)) ] )
