@@ -19,14 +19,14 @@ class Provider:
     self.audiofile = "{}/data/places/places_mfcc.npy".format(self.root)
     self.imagefile = "{}/data/places/placeimgsfeatsvgg19.npy".format(self.root)
     
-    self.utt2ASR = parse_map(open("{}/data/places/metadata/utt2ASR".format(self.root)))
-    self.utt2wav = parse_map(open("{}/data/places/metadata/utt2wav".format(self.root)))
-    self.utt2image = parse_map(open("{}/data/places/metadata/utt2image".format(self.root)))
-    self.utt2spk = parse_map(open("{}/data/places/metadata/utt2spk".format(self.root)))
+    self.utt2ASR = parse_map(open("{}/data/places/metadata/utt2ASR".format(self.root), encoding='utf-8'))
+    self.utt2wav = parse_map(open("{}/data/places/metadata/utt2wav".format(self.root), encoding='utf-8'))
+    self.utt2image = parse_map(open("{}/data/places/metadata/utt2image".format(self.root), encoding='utf-8'))
+    self.utt2spk = parse_map(open("{}/data/places/metadata/utt2spk".format(self.root), encoding='utf-8'))
     self.id = dict(train = set(line.strip() for line in open("{}/data/places/lists/acl_2017_train_uttids".format(self.root))),
                    val = set(line.strip() for line in open("{}/data/places/lists/acl_2017_val_uttids".format(self.root))))
     self.audio = np.load(self.audiofile).item(0)
-    self.imageid = [ line.split()[1] for line in open("{}/data/places/metadata/utt2image".format(self.root)) ]
+    self.imageid = [ line.split()[1] for line in open("{}/data/places/metadata/utt2image".format(self.root), encoding='utf-8') ]
     self.images = dict((imgid, feat) for imgid, feat in zip(self.imageid, np.load(self.imagefile)))
    
   def iterImages(self, split='train', shuffle=False):
