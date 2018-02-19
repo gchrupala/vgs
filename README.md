@@ -23,5 +23,3 @@ The script will run for 25 epochs and print the value of loss function periodica
 There are also example experiment runs with the [Synthetically spoken COCO dataset](http://doi.org/10.5281/zenodo.400926).
 
 
-
-

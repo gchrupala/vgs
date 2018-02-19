@@ -4,31 +4,42 @@ import onion.util as util
 import torch.nn.functional as F
 
 
-def residual(f, x, *args):
-    fx, _ = f(x, *args)
-    return x + fx
 
 class StackedGRU(nn.Module):
     
-    def __init__(self, input_size, hidden_size, num_layers, residual=False, **kwargs):
+    def __init__(self, input_size, hidden_size, num_layers, residual=False, bidirectional=False, **kwargs):
         super(StackedGRU, self).__init__()
         assert num_layers > 0
         util.autoassign(locals())
-        self.bottom = nn.GRU(input_size, hidden_size, 1, **kwargs)
+        self.bottom = nn.GRU(input_size, hidden_size, 1, bidirectional=bidirectional, **kwargs)
         self.layers = nn.ModuleList()
-
+        if bidirectional:
+            self.proj = nn.Linear(hidden_size * 2, hidden_size)
+        else:
+            self.proj = lambda x: x
      
         for i in range(num_layers-1):
-            layer = nn.GRU(hidden_size, hidden_size, 1, **kwargs)
+            layer = nn.GRU(hidden_size, hidden_size, 1, bidirectional=self.bidirectional, **kwargs)
             self.layers.append(layer)
 
-    def forward(self, x, h0):
-        out, _ = self.bottom(x, h0[0:1,:,:])
+    def forward(self, x):
+        j = 2 if self.bidirectional else 1
+        out, _ = self.bottom(x)
+        out = self.proj(out)
         for i in range(self.num_layers-1):
-            if self.residual: 
-                out =  residual(self.layers[i], out, h0[i+1:i+2,:,:])
-            else:
-                out, _ = self.layers[i](out, h0[i+1:i+2,:,:])
+            out =  self.Residual(self.layers[i], out)
         return out
+
         
     
+    def Residual(self, f, x, *args):
+        fx, _ = f(x, *args)
+        #print(f)
+        #print(" x:", x.size())
+        #print("fx:", fx.size())
+        px = self.proj(fx)    
+        #print("px:", px.size())
+        if self.residual:
+            return x + px
+        else:
+            return px

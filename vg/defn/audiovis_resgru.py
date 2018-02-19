@@ -14,7 +14,7 @@ from vg.simple_data import vector_padder
 
 class Encoder(nn.Module):
 
-    def __init__(self, size_vocab, size, depth=1, recur_depth=1,
+    def __init__(self, size_vocab, size, depth=1, recur_depth=1, bidirectional=False,
                  filter_length=6, filter_size=64, stride=2, drop_i=0.75 , drop_s=0.25):
         super(Encoder, self).__init__()
         util.autoassign(locals())
@@ -22,7 +22,8 @@ class Encoder(nn.Module):
 
         self.Conv = conv.Convolution1D(self.size_vocab, self.filter_length, self.filter_size, stride=self.stride)
         # self.RNN = nn.GRU(self.filter_size, self.size, self.depth, batch_first=True)
-        self.RNN = stacked_gru.StackedGRU(self.filter_size, self.size, self.depth, residual=True, batch_first=True)
+        self.RNN = stacked_gru.StackedGRU(self.filter_size, self.size, self.depth,
+                     bidirectional=bidirectional, residual=True, batch_first=True)
 
     def forward(self, input):
         return self.RNN(self.Conv(input), self.h0.expand(self.depth, input.size(0), self.size).cuda())
@@ -42,7 +43,8 @@ class Visual(nn.Module):
                               filter_length=config.get('filter_length', 6),
                               filter_size=config.get('filter_size', 1024),
                               stride=config.get('stride', 3),
-                              depth=config.get('depth', 1))
+                              depth=config.get('depth', 1),
+                              bidirectional=config.get('bidirectional', False))
         self.Attn   = attention.SelfAttention(config['size'], size=config.get('size_attn', 512))
         self.ImgEncoder  = util.make_linear(config['size_target'], config['size'])
 

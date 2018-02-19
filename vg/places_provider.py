@@ -9,12 +9,13 @@ from vg.util import parse_map
 
 class Provider:
 
-  def __init__(self, dataset, root='.', audio_kind='mfcc'):
+  def __init__(self, dataset, root='.', audio_kind='mfcc', truncate=None):
     assert dataset == 'places'
     assert audio_kind == 'mfcc'
     self.root = root
     self.dataset_name = dataset
     self.audio_kind = audio_kind
+    self.truncate = truncate    
     self.audiofile = "{}/data/places/places_mfcc.npy".format(self.root)
     self.imagefile = "{}/data/places/placeimgsfeatsvgg19.npy".format(self.root)
     
@@ -43,7 +44,8 @@ class Provider:
         sent = dict(tokens = self.utt2ASR[uttid].split(), 
                     raw = self.utt2ASR[uttid],
                     imgid = self.utt2image[uttid],
-                    audio = self.audio[uttid],
+                    audio = self.audio[uttid][:self.truncate,:] if self.truncate is not None 
+                            else self.audio[uttid],
                     sentid=uttid,
                     speaker="places_" + self.utt2spk[uttid])
         yield sent
