@@ -10,11 +10,13 @@ from vg.util import parse_map
 #import h5py
 
 import sys
+
 import io
 import requests
 import gtts
 import hashlib
 import pydub
+
 
 def main():
     logging.getLogger().setLevel('INFO')
@@ -128,6 +130,7 @@ def mfcc(args):
         csv_writer.writerow(["PATH", "SPEAKER", "CHAPTER", "TRANSCRIPT"])
         D = {}
         for i, p in enumerate(paths):
+            print("Visiting diretory number {}".format(i))
             # Only consider deepest directories and avoid root
             if p[2] and p[0] != root:
                 # Get the transcript
@@ -146,9 +149,12 @@ def mfcc(args):
                     else:
                         print("NO")
                 trans.close()
+            if i % 100 == 0 and i != 0:
+                print("Saving after {} samples".format(int(i/100)))
+                np.save(args.output + "_" + str(int(i/100)), D)
+                D = {}
             print(i)
         csv_file.close()
-        np.save(args.output, D)
         return
     else:
         raise NotImplementedError
@@ -164,7 +170,7 @@ import time
 import timeout_decorator
 @timeout_decorator.timeout(5)
 def extract_mfcc(f, truncate=20):
-    logging.info("Extracting features from {}".format(f))
+    #logging.info("Extracting features from {}".format(f))
     try:
         (sig, rate) = sf.read(f)
         max_len = truncate*rate
