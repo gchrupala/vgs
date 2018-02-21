@@ -3,9 +3,13 @@ import numpy as np
 import json
 import sys
 import gzip
-from vg.util import parse_map
 
-
+def parse_map(lines):
+    M = {}
+    for line in lines:
+        fields  =line.split()
+        M[fields[0]] = ' '.join(fields[1:])
+    return M
 
 class Provider:
 

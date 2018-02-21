@@ -22,12 +22,12 @@ class StackedGRU(nn.Module):
             layer = nn.GRU(hidden_size, hidden_size, 1, bidirectional=self.bidirectional, **kwargs)
             self.layers.append(layer)
 
-    def forward(self, x):
+    def forward(self, x, h0):
         j = 2 if self.bidirectional else 1
-        out, _ = self.bottom(x)
+        out, _ = self.bottom(x, h0[0:1,:,:])
         out = self.proj(out)
         for i in range(self.num_layers-1):
-            out =  self.Residual(self.layers[i], out)
+            out =  self.Residual(self.layers[i], out, h0[i+1:i+2,:,:])
         return out
 
         
