@@ -3,13 +3,19 @@ import csv
 import numpy as np
 import logging
 import python_speech_features as psf
-# import scipy.io.wavfile as wav
+import scipy.io.wavfile as wav
 import soundfile as sf
 import argparse
 from vg.util import parse_map
-import h5py
-from extract_img_feats import img_features
+#import h5py
+
 import sys
+import io
+import requests
+import gtts
+import hashlib
+import pydub
+
 def main():
     logging.getLogger().setLevel('INFO')
     parser = argparse.ArgumentParser()
@@ -32,9 +38,49 @@ def main():
     imgfeats_p.add_argument('--resize', type=int,  help='Integer, resize images shorter side to this size', default=None)
     imgfeats_p.add_argument('--crop_size', type=int,  help='Integer, crop this sized square from the images', default=224)
     imgfeats_p.add_argument('--tencrop', action='store_true',  help='If given, average over 10 crop features.')
-    
+
+    synth_p = commands.add_parser("synth")
+    synth_p.set_defaults(func=synth)
+    synth_p.add_argument('--dataset', default='flickr8k', help='Dataset')
+    synth_p.add_argument('path', help='Destination directory')
     args = parser.parse_args()
     args.func(args)    
+
+def synth(args):
+    if args.dataset != "flickr8k":
+        raise NotImplementedError
+    sentences = "data/flickr8k/Flickr8k.token.txt"
+    for sent in (line.split('\t')[1].strip() for line in open(sentences)):
+        with open("{}/{}.wav".format(args.path, encode(sent)), 'wb') as f:
+            f.write(synthesize(sent))
+
+def encode(s):
+    return hashlib.md5(s.encode('utf-8')).hexdigest()
+
+def decodemp3(s):
+    seg = pydub.AudioSegment.from_mp3(io.BytesIO(s))
+    buf = io.BytesIO()
+    seg.export(buf, format='wav')
+    return buf.getvalue()
+
+def speak(words):
+    f = io.BytesIO()
+    gtts.gTTS(text=words, lang='en-us').write_to_fp(f)
+    return f.getvalue()
+
+def synthesize(text, trial=1):
+    logging.info("Synthesizing {}".format(text))
+    try:
+        return decodemp3(speak(text))
+    except requests.exceptions.HTTPError:
+        if trial > 10:
+            raise RuntimeError("HTTPError: giving up after 10 trials")
+        else:
+            logging.info("HTTPError on trial {}, waiting for 5 sec".format(trial))
+            time.sleep(5)
+            return synthesize(text, trial=trial+1)
+
+
 
 
 def merge(args):
@@ -146,6 +192,7 @@ def get_imgs(dataset):
         raise ValueError ("Unknown dataset {}".format(dataset))
 
 def run_img_feats(args):
+    from extract_img_feats import img_features
     paths = get_imgs(args.dataset)
     feats = img_features(paths, args.cnn, args.resize, args.crop_size, args.tencrop)
     np.save(args.output, feats)
