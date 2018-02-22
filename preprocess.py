@@ -7,16 +7,12 @@ import scipy.io.wavfile as wav
 import soundfile as sf
 import argparse
 from vg.util import parse_map
-#import h5py
-
 import sys
-
 import io
 import requests
 import gtts
 import hashlib
 import pydub
-
 
 def main():
     logging.getLogger().setLevel('INFO')
