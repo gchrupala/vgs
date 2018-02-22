@@ -20,7 +20,6 @@ with open("/roaming/u1257964/semanticf8k/semantic_flickraudio_labels.csv") as cs
         labels.append(label)
 
 f8k_root = "/exp/gchrupal/corpora/flickr_audio/wavs/"
-
 D_mfcc= np.load("/roaming/u1257964/semanticf8k/sf8kmfcc.npy").item()
 
 X_mfcc_sum = []
@@ -39,9 +38,6 @@ X_mfcc_max = np.array(X_mfcc_max)
 vectorizer = TfidfVectorizer()
 X_text = vectorizer.fit_transform(txts)
 datasets = [X_text, X_mfcc_sum, X_mfcc_mean, X_mfcc_max]
-# for i, j in enumerate(datasets[1:]):
-#    datasets[i] = np.array(j)
-
 
 names = ["text", "sum mfcc", "mean mfcc", "max mfcc"]
 
