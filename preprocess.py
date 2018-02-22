@@ -22,7 +22,7 @@ def main():
     commands = parser.add_subparsers()
     mfcc_p = commands.add_parser('mfcc')
     mfcc_p.set_defaults(func=mfcc)
-    mfcc_p.add_argument('--dataset',  help='Dataset to process: flickr8k, places or librispeech')
+    mfcc_p.add_argument('--dataset',  help='Dataset to process: flickr8k, places, librispeech or semanticf8k')
     mfcc_p.add_argument('--output',   help='Path to file where output will be saved', default='mfcc.h5')
 
     merge_p = commands.add_parser('merge')
@@ -119,6 +119,19 @@ def mfcc(args):
             return M
         root = "/exp/gchrupal/corpora/flickr_audio/"
         M = parse(open(root + "/wav2capt.txt"))
+    elif args.dataset == "semanticf8k":
+        f8k_root = "/exp/gchrupal/corpora/flickr_audio/wavs/"
+        feats = {}
+        with open("/roaming/u1257964/semanticf8k/semantic_flickraudio_labels.csv") as csvfile:
+            reader = csv.reader(csvfile, delimiter=',', quotechar='"')
+            for i, row in enumerate(reader):
+                if i == 0:
+                    continue
+                cocoid = row[0]
+                path = os.path.join(f8k_root, cocoid + ".wav")
+                feats[path] = extract_mfcc(path)
+        np.save(args.output, np.array(feats))
+        return
     # Produces .npy file, but also a .csv with meta-data
     elif args.dataset == "librispeech":
         root = "/roaming/u1257964/LibriSpeech/LibriSpeech/"
