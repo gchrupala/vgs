@@ -133,22 +133,29 @@ class Batcher(object):
 
 
 
-
+def scale_utterance(data):
+    def scale(datum):
+        # time x feature
+        mu = datum.mean(axis=1, keepdims=True)
+        sigma = datum.std(axis=1, keepdims=True)
+        return (datum - mu)/sigma
+    return [ scale(datum) for datum in data ]
 
 class SimpleData(object):
     """Training / validation data prepared to feed to the model."""
-    def __init__(self, provider, tokenize=words, min_df=10, scale=True, scale_input=False,
+    def __init__(self, provider, tokenize=words, min_df=10, scale=True, scale_input=False, scale_utt=False,
                 batch_size=64, shuffle=False, limit=None, curriculum=False, by_speaker=False, val_vocab=False,
-                visual=True, erasure=5):
+                visual=True, erasure=5, speakers=None):
         autoassign(locals())
         self.data = {}
         self.mapper = IdMapper(min_df=self.min_df)
         self.scaler = StandardScaler() if scale else NoScaler()
         self.audio_scaler = InputScaler() if scale_input else NoScaler()
-
+    
         parts = insideout(self.shuffled(arrange(provider.iterImages(split='train'),
                                                                tokenize=self.tokenize,
-                                                               limit=limit)))
+                                                               limit=limit,
+                                                               speakers=speakers )))
         parts_val = insideout(self.shuffled(arrange(provider.iterImages(split='val'), tokenize=self.tokenize)))
         # TRAINING
         if self.val_vocab:
@@ -159,7 +166,11 @@ class SimpleData(object):
 
         parts['tokens_out'] = self.mapper.transform(parts['tokens_out'])
         parts['img'] = self.scaler.fit_transform(parts['img'])
-        parts['audio'] = self.audio_scaler.fit_transform(parts['audio'])
+        if scale_input:
+            parts['audio'] = self.audio_scaler.fit_transform(parts['audio'])
+        elif scale_utt:
+            parts['audio'] = scale_utterance(parts['audio'])
+            
         self.data['train'] = outsidein(parts)
 
         # VALIDATION
@@ -167,7 +178,11 @@ class SimpleData(object):
         parts_val['tokens_out'] = self.mapper.transform(parts_val['tokens_out'])
         if self.visual:
             parts_val['img'] = self.scaler.transform(parts_val['img'])
-        parts_val['audio'] = self.audio_scaler.transform(parts_val['audio'])
+        if scale_input:
+            
+            parts_val['audio'] = self.audio_scaler.transform(parts_val['audio'])
+        elif scale_utt:
+            parts_val['audio'] = scale_utterance(parts_val['audio'])
         self.data['valid'] = outsidein(parts_val)
         self.batcher = Batcher(self.mapper, pad_end=False, visual=visual, erasure=erasure)
 
@@ -222,17 +237,19 @@ def by_speaker(batcher, data, batch_size=32):
 def randomized(data):
     return sorted(data, key= lambda _: random.random())
 
-def arrange(data, tokenize=words, limit=None):
+def arrange(data, tokenize=words, limit=None, speakers=None):
     for i,image in enumerate(data):
         if limit is not None and i > limit:
             break
         for sent in image['sentences']:
-            toks = tokenize(sent)
-            yield {'tokens_in':  toks,
-                   'tokens_out': toks,
-                   'audio':       sent.get('audio'),
-                   'img':        image.get('feat'),
-                   'speaker':    sent.get('speaker') }
+            speaker = sent.get('speaker')
+            if speakers is None or speaker in speakers:
+                toks = tokenize(sent)
+                yield {'tokens_in':  toks,
+                       'tokens_out': toks,
+                       'audio':       sent.get('audio'),
+                       'img':        image.get('feat'),
+                       'speaker':   speaker  }
 
 
 def insideout(ds):

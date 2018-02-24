@@ -11,28 +11,12 @@ from onion import rhn, attention, conv
 from vg.simple_data import vector_padder
 
 
+from vg.defn.audiovis_resgru import Encoder
 
-class Encoder(nn.Module):
-
-    def __init__(self, size_vocab, size, depth=1, 
-                 filter_length=6, filter_size=64, stride=2, residual=False, seed=1):
-        super(Encoder, self).__init__()
-        util.autoassign(locals())
-        self.h0 = torch.autograd.Variable(torch.zeros(self.depth, 1, self.size))
-
-        self.Conv = conv.Convolution1D(self.size_vocab, self.filter_length, self.filter_size, stride=self.stride)
-        
-        self.RNN = nn.GRU(self.filter_size, self.size, self.depth, batch_first=True)
-
-    def forward(self, input):
-        
-        out, last = self.RNN(self.Conv(input), self.h0.expand(self.depth, input.size(0), self.size).cuda())
-        return out
-
-class Visual(nn.Module):
+class Audio(nn.Module):
 
     def __init__(self, config):
-        super(Visual, self).__init__()
+        super(Audio, self).__init__()
         util.autoassign(locals())
         self.margin_size = config.get('margin_size', 0.2)
         # FIXME FIXME ADD gradient clipping!
@@ -43,30 +27,33 @@ class Visual(nn.Module):
                               filter_length=config.get('filter_length', 6),
                               filter_size=config.get('filter_size', 1024),
                               stride=config.get('stride', 3),
-                              depth=config.get('depth', 1),
-        #                      recur_depth=config.get('recur_depth',1),
-        #                      drop_i=config.get('drop_i', 0.75),
-        #                      drop_s=config.get('drop_s', 0.25),
-                              residual=config.get('residual', False),
-                              seed=config.get('seed', 1))
+                              depth=config.get('depth', 1))
         self.Attn   = attention.SelfAttention(config['size'], size=config.get('size_attn', 512))
-        self.ImgEncoder  = util.make_linear(config['size_target'], config['size'])
+        self.ProjBeg = nn.Linear(config['size'], config['size_target'])
+        self.ProjEnd = nn.Linear(config['size'], config['size_target'])
 
-
+    def score(self, x, y):
+        return F.cosine_similarity(x, y, dim=1)
+        
     def forward(self, speech):
-        return F.normalize(self.Attn(self.Encode(speech)), p=2, dim=1)
+        return F.normalize(self.ProjBeg(self.Attn(self.Encode(speech))), p=2, dim=1)
 
-    def cost(self, i, s_encoded):
-        i_encoded = F.normalize(self.ImgEncoder(i), p=2, dim=1)
-        return contrastive(i_encoded, s_encoded, margin=self.margin_size)
+    def cost(self, beg, end):
+        beg_encoded = F.normalize(self.ProjBeg(self.Attn(self.Encode(beg))), p=2, dim=1)
+        end_encoded = F.normalize(self.ProjEnd(self.Attn(self.Encode(end))), p=2, dim=1)
+        #N = beg_encoded.size(0)
+        #X, Y = pairwise(beg_encoded, end_encoded)
+        #scores = self.score(X, Y).view(N, N)
+        scores = cosine_matrix(beg_encoded, end_encoded) 
+        return contrastive2(scores, margin=self.margin_size)
 
-    def train_cost(self, speech, image):
-        return self.cost(image, self(speech))
+    def train_cost(self, beg, end):
+        return self.cost(beg, end)
 
-    def test_cost(self, speech, image):
+    def test_cost(self, beg, end):
         mode = self.training
         self.eval()
-        cost = self.cost(image, self(speech))
+        cost = self.cost(beg, end)
         self.training = mode
         return cost
 
@@ -78,15 +65,32 @@ class Visual(nn.Module):
         return pred
 
     def args(self, item):
-        return (item['audio'], item['target_v'])
+        return (item['audio_beg'], item['audio_end'])
 
-    def encode_images(self, images):
-        mode = self.training
-        self.eval()
-        rep = F.normalize(self.ImgEncoder(images), p=2, dim=1)
-        self.training = mode
-        return rep
 
+def pairwise(A, B):
+    # A, B: NxM
+    assert A.size() == B.size()
+    N = A.size(0)
+    M = A.size(1)
+    A_ = A.repeat(N, 1)
+    B_ = B.unsqueeze(1).expand(N, N, M).contiguous().view(N*N, M)
+    return A_, B_
+
+def contrastive2(score_matrix, margin=0.2):
+        # i: (fixed) image embedding,
+        # s: sentence embedding
+        errors = - score_matrix
+        diagonal = diag(errors)
+        # compare every diagonal score to scores in its column (all contrastive images for each sentence)
+        cost_s = torch.clamp(margin - errors + diagonal, min=0)
+        # all contrastive sentences for each image
+        cost_i = torch.clamp(margin - errors + diagonal.view(-1, 1), min=0)
+        cost_tot = cost_s + cost_i
+        # clear diagonals
+        I = torch.autograd.Variable(torch.eye(cost_tot.size(0)), requires_grad=True).cuda()
+        cost_tot = (1-I) * cost_tot
+        return cost_tot.mean()
 
 def contrastive(i, s, margin=0.2):
         # i: (fixed) image embedding,
@@ -133,11 +137,6 @@ def iter_layer_states(model, audios, batch_size=128):
 def layer_states(model, audios, batch_size=128):
     return list(iter_layer_states(model, audios, batch_size=128))
 
-def encode_images(model, imgs, batch_size=128):
-    """Project imgs to the joint space using model.
-    """
-    return numpy.vstack([ model.task.encode_images(torch.autograd.Variable(torch.from_numpy(numpy.vstack(batch))).cuda()).data.cpu().numpy()
-                          for batch in util.grouper(imgs, batch_size) ])
 
 def symbols(model):
     return model.batcher.mapper.ids.decoder

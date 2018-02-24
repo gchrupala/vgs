@@ -13,7 +13,7 @@ batch_size = 32
 epochs=15
 prov = dp.getDataProvider(dataset, root='../..', audio_kind='mfcc')
 data = sd.SimpleData(prov, min_df=10, scale=False,
-                     batch_size=batch_size, shuffle=True, erasure=15)
+                     batch_size=batch_size, shuffle=True, erasure=15, limit=5000)
 print("Loaded data")
 model_config = dict(size=512, depth=5,  max_norm=2.0, residual=True,
                     lr=0.0002, size_vocab=13, size_target=512,

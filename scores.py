@@ -14,7 +14,7 @@ def main():
     retrieve_p.add_argument('dir', nargs='?', help='Target directory', default=".")
 
     correlate_p = commands.add_parser('correlate')
-    correlate_p.add_argument('--dir', help='Target directory', default=".")
+    correlate_p.add_argument('dir', nargs='?', help='Target directory', default=".")
     correlate_p.set_defaults(func=correlate)
     args = parser.parse_args()
     args.func(args)    
@@ -23,14 +23,13 @@ def main():
 def correlate(args):
     os.chdir(args.dir)
 
-    print("epoch example r")
+    print("epoch r")
     for i in range(1,26):
-        for j in range(0, 7600, 400):
-            try:
-                data = numpy.load("scores.{}.{}.npy".format(i,j))
-                print(i, j, round(data[0], 3))
-            except IOError:
-                pass
+       try:
+          data = numpy.load("scores.{}.npy".format(i))
+          print(i, round(data[0], 3))
+       except IOError:
+          pass
     
 def retrieve(args):
     os.chdir(args.dir)

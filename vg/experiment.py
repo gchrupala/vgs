@@ -15,14 +15,19 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import scipy.stats
 
-def run_train(data, prov, model_config, run_config, eval_config, runid='', resume=False):
+def run_train(data, prov, model_config, run_config, eval_config):
 
-    if resume:
+    if run_config.get('resume'):
         raise NotImplementedError
     else:
         last_epoch = 0
         model = bundle.GenericBundle(dict(scaler=data.scaler,
                                            batcher=data.batcher), model_config, run_config['task'])
+    if run_config['pretrained_encoder']:
+       pretrained = bundle.load(model_config['pretrained_path'])
+       print("Pretrained encoder loaded")
+       model.task.Encode = pretrained.task.Encode        
+       print("Encoder replaced")
     model.task.cuda()
     model.task.train()
 
@@ -67,6 +72,12 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
         model.task.train()
         return result
 
+    def epoch_eval_corr_image():
+        model.task.eval()
+        result = eval_corr_image(model, prov, eval_config)
+        model.task.train()
+        return result
+
     def epoch_eval(mode='image', para=False, flickr=False):
         if para: # compatibility 
             mode = 'para'
@@ -74,6 +85,8 @@ def run_train(data, prov, model_config, run_config, eval_config, runid='', resum
             return epoch_eval_para(flickr=flickr)
         elif mode == 'corr':
             return epoch_eval_corr()
+        elif mode == 'corr_image':
+            return epoch_eval_corr_image()
         # otherwise image
         model.task.eval()
         task = model.task
@@ -179,3 +192,26 @@ def norm(parameters, norm_type=2):
         total_norm += param_norm ** norm_type
     total_norm = total_norm ** (1. / norm_type)
     return total_norm
+
+
+def eval_corr_image(model, prov, eval_config):
+    model.task.eval().cuda()
+    sents = []
+    images = []
+    if eval_config.get('seed') is not None:
+        numpy.random.seed(eval_config['seed'])
+    prop = eval_config.get('prop', 0.1)
+    speakers = eval_config.get('speakers', None)
+    for image in prov.iterImages(split=eval_config['split']):
+            for sent in image['sentences']:
+                    if speakers is None or sent['speaker'] in speakers:
+                        if numpy.random.random() >= (1-prop): 
+                            images.append(image['feat'])
+                            sents.append(eval_config['tokenize'](sent))
+
+    pred = eval_config['encode_sentences'](model, sents, batch_size=eval_config['batch_size'])
+    SIM_image = cosine_similarity(images).flatten()
+    SIM_pred = cosine_similarity(pred).flatten()
+    result = scipy.stats.spearmanr(SIM_image.flatten(), SIM_pred.flatten()) #FIXME only take upper triangular
+    return result
+
