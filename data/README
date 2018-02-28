@@ -12,6 +12,6 @@ DATASETS
 
 name     utterances hours speakers type
 libri     292,368   1000    2484   read
-coco      566,435   571        1   synthetic
-places    214,585   514     1465   spontaneous
-flickr8k   30,000   34       183   read
+coco      566,435    571       1   synthetic
+places    214,585    514    1465   spontaneous
+flickr8k   30,000     34     183   read
