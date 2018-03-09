@@ -14,9 +14,7 @@ class StackedGRU(nn.Module):
         self.bottom = nn.GRU(input_size, hidden_size, 1, bidirectional=bidirectional, **kwargs)
         self.layers = nn.ModuleList()
         if bidirectional:
-            self.proj = nn.Linear(hidden_size * 2, hidden_size)
-        else:
-            self.proj = lambda x: x
+            self.downscale = nn.Linear(hidden_size * 2, hidden_size)
      
         for i in range(num_layers-1):
             layer = nn.GRU(hidden_size, hidden_size, 1, bidirectional=self.bidirectional, **kwargs)
@@ -29,7 +27,12 @@ class StackedGRU(nn.Module):
         for i in range(self.num_layers-1):
             out =  self.Residual(self.layers[i], out, h0[i+1:i+2,:,:])
         return out
-
+    
+    def proj(self, x):
+        if self.bidirectional:
+            return self.downscale(x)
+        else:
+            return x        
         
     
     def Residual(self, f, x, *args):

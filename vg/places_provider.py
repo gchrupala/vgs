@@ -13,7 +13,7 @@ def parse_map(lines):
 
 class Provider:
 
-  def __init__(self, dataset, root='.', audio_kind='mfcc', truncate=None):
+  def __init__(self, dataset, root='.', audio_kind='mfcc', truncate=None, load_images=True):
     assert dataset == 'places'
     assert audio_kind == 'mfcc'
     self.root = root
@@ -31,12 +31,16 @@ class Provider:
                    val = set(line.strip() for line in open("{}/data/places/lists/acl_2017_val_uttids".format(self.root))))
     self.audio = np.load(self.audiofile).item(0)
     self.imageid = [ line.split()[1] for line in open("{}/data/places/metadata/utt2image".format(self.root), encoding='utf-8') ]
-    self.images = dict((imgid, feat) for imgid, feat in zip(self.imageid, np.load(self.imagefile)))
-   
+    if load_images:
+        self.images = dict((imgid, feat) for imgid, feat in zip(self.imageid, np.load(self.imagefile)))
+    else:
+        self.images = {}
+    self.speakers = set("places_" + x for x in self.utt2spk.values())
+    
   def iterImages(self, split='train', shuffle=False):
 
     for sent in self.iterSentences(split=split, shuffle=shuffle):
-        image = dict(sentences=[sent], imgid=sent['imgid'], feat=self.images[sent['imgid']])
+        image = dict(sentences=[sent], imgid=sent['imgid'], feat=self.images.get(sent['imgid']))
         yield image
 
   def iterSentences(self, split='train', shuffle=False):

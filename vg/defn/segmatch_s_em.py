@@ -8,25 +8,11 @@ import torch.optim as optim
 import torch.autograd
 from onion import rhn, attention, conv
 from vg.simple_data import vector_padder
-from vg.defn.simple_encoder import Encoder
+from vg.defn.encoder_em import Encoder
 from vg.scorer import Scorer, testing
 from collections import Counter
 import sys
-
-class Decoder(nn.Module):
-    def __init__(self, size_feature, size, depth=1):
-        super(Decoder, self).__init__()
-        util.autoassign(locals())
-        self.h0 = torch.autograd.Variable(torch.zeros(self.depth, 1, self.size))
-        self.RNN = nn.GRU(self.size_feature, self.size, self.depth, batch_first=True)
-        self.Proj = nn.Linear(self.size, self.size_feature)
-        
-    def forward(self, rep, target):
-        R = rep.unsqueeze(1).expand(-1, target.size(1), -1).cuda()      
-        H0 = self.h0.expand(self.depth, target.size(0), self.size).cuda()        
-        out, last = self.RNN(R, H0)
-        pred = self.Proj(out)
-        return pred
+from onion.loss import cosine_matrix, contrastive 
 
 def step(task, *args):
     loss = task.train_cost(*args)
@@ -41,43 +27,46 @@ class Audio(nn.Module):
     def __init__(self, config):
         super(Audio, self).__init__()
         util.autoassign(locals())
-        self.Encode = Encoder(**config['encoder'])
-
-        self.Decode1 = Decoder(config['audio']['size_feature'], config['audio']['size'])
-
-        self.Decode3 = Decoder(config['audio']['size_feature'], config['audio']['size'])
+        self.Encode = Encoder(**config['encoder'])        
+        self.ProjBeg = nn.Linear(config['audio']['size'], config['audio']['size_target'])
+        self.ProjEnd = nn.Linear(config['audio']['size'], config['audio']['size_target'])
         self.optimizer = optim.Adam(self.parameters(), lr=config['audio']['lr'])
 
     def step(self, *args):
         return step(self, *args)
 
-    def forward(self, speech2):
-        rep = F.normalize(self.Encode(speech2), p=2, dim=1)
-        return rep
-    
-    def cost(self, speech1_prev, speech1, rep, speech3_prev, speech3):
-        pred1 = self.Decode1(rep, speech1)
-        pred3 = self.Decode3(rep, speech3)
-        return F.mse_loss(pred1, speech1) + F.mse_loss(pred3, speech3)
+    def score(self, x, y):
+        return F.cosine_similarity(x, y, dim=1)
+        
+    def forward(self, speech):
+        return F.normalize(self.ProjBeg(self.Encode(speech)), p=2, dim=1)
 
-    def train_cost(self, speech1_prev, speech1, speech2, speech3_prev, speech3):
-        rep = self(speech2)
-        return self.cost(speech1_prev, speech1, rep, speech3_prev, speech3)
+    def cost(self, beg, end):
+        beg_encoded = F.normalize(self.ProjBeg(self.Encode(beg)), p=2, dim=1)
+        end_encoded = F.normalize(self.ProjEnd(self.Encode(end)), p=2, dim=1)
+        scores = cosine_matrix(beg_encoded, end_encoded) 
+        return contrastive(scores, margin=self.config['audio']['margin_size'])
 
-    def test_cost(self, speech1_prev, speech1, speech2, speech3_prev, speech3):
+    def train_cost(self, beg, end):
+        return self.cost(beg, end)
+
+    def test_cost(self, beg, end):
         with testing(self):
             self.eval()
-            rep = self(speech2)
-            return self.cost(speech1_prev, speech1, rep, speech3_prev, speech3)
+            cost = self.cost(beg, end)
+        return cost
 
     def predict(self, speech):
         with testing(self):
-            return self(speech)
-
+            self.eval()
+            pred = self(speech)
+        return pred
 
     def args(self, item):
-        return (item['audio_1_prev'], item['audio_1'], item['audio_2'], item['audio_3_prev'], item['audio_3'])
-
+        beg = item['input_beg'].astype('int64')
+        end = item['input_end'].astype('int64')
+        assert min(beg.shape) > 0 and min(end.shape) > 0, "Broken input {}".format(item['input'])
+        return (beg, end)
 
 def experiment(net, data, prov, model_config, run_config):
     def valid_loss(task):
@@ -90,9 +79,6 @@ def experiment(net, data, prov, model_config, run_config):
     
     net.cuda()
     net.train()
-
-
-  
 
     net.optimizer.zero_grad()
     last_epoch = 0
@@ -113,5 +99,6 @@ def experiment(net, data, prov, model_config, run_config):
                 sys.stdout.flush()
         torch.save(net, "model.{}.pkl".format(epoch))
     torch.save(net, "model.pkl")
+
 
 

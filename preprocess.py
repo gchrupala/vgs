@@ -23,7 +23,8 @@ def main():
     mfcc_p = commands.add_parser('mfcc')
     mfcc_p.set_defaults(func=mfcc)
     mfcc_p.add_argument('--dataset',  help='Dataset to process: flickr8k, places, librispeech or semanticf8k')
-    mfcc_p.add_argument('--output',   help='Path to file where output will be saved', default='mfcc.h5')
+    mfcc_p.add_argument('--output',   help='Path to file where output will be saved', default='mfcc.npy')
+    mfcc_p.add_argument('--synthetic', action='store_true')
 
     merge_p = commands.add_parser('merge')
     merge_p.set_defaults(func=merge)
@@ -170,6 +171,7 @@ def mfcc(args):
     else:
         raise NotImplementedError
     D = {}
+    
     for key, wav in M.items():
             path =  root + "/" + wav
             arr = extract_mfcc(path)

@@ -6,20 +6,23 @@ import gzip
 
 class Provider:
 
-  def __init__(self, dataset, root='.', audio_kind='mfcc', extra_train=True):
+  def __init__(self, dataset, root='.', audio_kind='mfcc', extra_train=True, truncate=None, load_images=True):
+    if not load_images:
+        print("load_images=False has no effect")
     self.root = root
     self.dataset = dataset
     self.audio_kind = audio_kind
+    self.truncate = truncate
     self.img = {}
     self.txt = {}
     self.img['train'] = numpy.load("{}/data/{}/vendrov/data/coco/images/10crop/train.npy".format(self.root, self.dataset), encoding='bytes')
     self.img['val'] = numpy.load("{}/data/{}/vendrov/data/coco/images/10crop/val.npy".format(self.root, self.dataset), encoding='bytes')
     self.img['test'] = numpy.load("{}/data/{}/vendrov/data/coco/images/10crop/test.npy".format(self.root, self.dataset), encoding='bytes')
-
+    
     self.txt['train'] = [ line.split() for line in open("{}/data/{}/vendrov/data/coco/train.txt".format(self.root, self.dataset)) ]
     self.txt['val'] = [ line.split() for line in open("{}/data/{}/vendrov/data/coco/val.txt".format(self.root, self.dataset)) ]
     self.txt['test'] = [ line.split() for line in open("{}/data/{}/vendrov/data/coco/test.txt".format(self.root, self.dataset)) ]
-
+    self.speakers = set(['GTTS'])
     audio_path = "{}/data/{}/dataset.{}.npy".format(self.root, self.dataset, self.audio_kind)
     ipa_path   = "{}/data/{}/dataset.ipa.jsonl.gz".format(self.root, self.dataset)
     words = json.load(open("{}/data/{}/dataset.words.json".format(self.root, self.dataset)))
@@ -53,10 +56,13 @@ class Provider:
         sent['tokens'] = self.txt[split][i*5+j]
         sent['raw'] = ' '.join(sent['tokens'])
         sent['imgid'] = i
+        sent['speaker'] = 'GTTS'
         if self.audio_kind is None:
             sent['audio'] = None
         else:
             sent['audio'] = self.AUDIO[self.w2i[sent['raw']]]
+            if self.truncate is not None:
+                sent['audio'] = sent['audio'][:self.truncate, :]
         if self.IPA is not None:
             sent['ipa'] = self.IPA[self.w2i[sent['raw']]]
         img['sentences'].append(sent)

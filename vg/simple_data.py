@@ -5,7 +5,7 @@ import os
 import copy
 from onion.util import autoassign
 import onion.util as util
-from  sklearn.preprocessing import StandardScaler
+from  sklearn.preprocessing import StandardScaler, LabelEncoder
 import string
 import random
 import itertools
@@ -56,12 +56,15 @@ def vector_padder(vecs):
         """
 
         max_len = max(map(len, vecs))
+        #for vec in vecs:
+        #    assert len(vec.shape) == 2, "Broken vector {}".format(vec)
+                
         return numpy.array([ numpy.vstack([numpy.zeros((max_len-len(vec),vec.shape[1])) , vec])
                             for vec in vecs ], dtype='float32')
 
 class Batcher(object):
 
-    def __init__(self, mapper, pad_end=False, visual=True, erasure=(5,5)):
+    def __init__(self, mapper, pad_end=False, visual=True, erasure=(5,5), sigma=None, noise_tied=False):
         autoassign(locals())
         self.BEG = self.mapper.BEG_ID
         self.END = self.mapper.END_ID
@@ -96,6 +99,8 @@ class Batcher(object):
         - output string at t-1
         - target string
         """
+        L_tok =  [len(x['tokens_in']) for x in gr]
+        L_aud =  [len(x['audio']) for x in gr ]
         mb_inp = self.padder([x['tokens_in'] for x in gr])
         mb_target_t = self.padder([x['tokens_out'] for x in gr])
         inp = mb_inp[:,1:]
@@ -103,10 +108,30 @@ class Batcher(object):
         target_prev_t = mb_target_t[:,0:-1]
         target_v = numpy.array([ x['img'] for x in gr ], dtype='float32')
         audio = vector_padder([ x['audio'] for x in gr ]) if gr[0]['audio']  is not None else None
-        mid = audio.shape[1] // 2 #FIXME Randomize this somewhat?
+        mid = midpoint(audio.shape[1] , max(L_aud) - int(numpy.median(L_aud)))
         gap = numpy.random.randint(self.gap_low, self.gap_high, 1)[0]
         audio_beg = audio[:, :mid - gap, :]
         audio_end = audio[:, mid + gap:, :]
+        mid = midpoint(inp.shape[1], max(L_tok) - int(numpy.median(L_tok)))
+        if gap >= mid: # avoid empty arrays
+            inp_beg = inp[:, :mid]
+            inp_end = inp[:, mid:]
+        else:
+            inp_beg = inp[:, :mid - gap]
+            inp_end = inp[:, mid + gap:]
+        
+        if self.sigma is not None and not self.noise_tied:
+            if numpy.random.binomial(1, 0.5) == 1:
+                audio_beg += numpy.random.normal(loc=0.0, scale=self.sigma, size=audio_beg.shape)
+            else:
+                audio_end += numpy.random.normal(loc=0.0, scale=self.sigma, size=audio_end.shape)
+        # Time tied noise
+        elif self.sigma is not None and self.noise_tied:
+            if numpy.random.binomial(1, 0.5) == 1:
+                audio_beg += numpy.random.normal(loc=0.0, scale=self.sigma, size=(audio_beg.shape[0], 1, audio_beg.shape[2]))
+            else:
+                audio_end += numpy.random.normal(loc=0.0, scale=self.sigma, size=(audio_end.shape[0], 1, audio_end.shape[2]))
+
         one3 = audio.shape[1] // 3
         two3 = one3 * 2
         audio_1      = audio[:, 1:one3,     :]
@@ -114,10 +139,13 @@ class Batcher(object):
         audio_2      = audio[:, one3:two3,  :] 
         audio_3      = audio[:, two3+1:,    :]
         audio_3_prev = audio[:, two3:-1,    :]
+
         assert audio_1.shape == audio_1_prev.shape
         assert audio_3.shape == audio_3_prev.shape
       
         return { 'input': inp,
+                 'input_beg': inp_beg,
+                 'input_end': inp_end,
                  'target_v':target_v if self.visual else None,
                  'target_prev_t':target_prev_t,
                  'target_t':target_t,
@@ -129,9 +157,12 @@ class Batcher(object):
                  'audio_2': audio_2,
                  'audio_3_prev': audio_3_prev,
                  'audio_3': audio_3,
-                 'speaker': gr[0]['speaker'] }
+                 'speaker': numpy.array([ x['speaker'] for x in gr ]),
+                 'speaker_id': numpy.array([ x['speaker_id'] for x in gr ])
+                }
 
-
+def midpoint(L_tot, L_pad):
+    return (L_tot - L_pad) // 2 + L_pad
 
 def scale_utterance(data):
     def scale(datum):
@@ -145,13 +176,13 @@ class SimpleData(object):
     """Training / validation data prepared to feed to the model."""
     def __init__(self, provider, tokenize=words, min_df=10, scale=True, scale_input=False, scale_utt=False,
                 batch_size=64, shuffle=False, limit=None, curriculum=False, by_speaker=False, val_vocab=False,
-                visual=True, erasure=5, speakers=None):
+                visual=True, erasure=5, sigma=None, noise_tied=False, speakers=None):
         autoassign(locals())
         self.data = {}
         self.mapper = IdMapper(min_df=self.min_df)
         self.scaler = StandardScaler() if scale else NoScaler()
         self.audio_scaler = InputScaler() if scale_input else NoScaler()
-    
+        self.speaker_encoder = LabelEncoder()
         parts = insideout(self.shuffled(arrange(provider.iterImages(split='train'),
                                                                tokenize=self.tokenize,
                                                                limit=limit,
@@ -166,6 +197,8 @@ class SimpleData(object):
 
         parts['tokens_out'] = self.mapper.transform(parts['tokens_out'])
         parts['img'] = self.scaler.fit_transform(parts['img'])
+        self.speaker_encoder.fit(parts['speaker']+parts_val['speaker'])
+        parts['speaker_id'] = self.speaker_encoder.transform(parts['speaker'])
         if scale_input:
             parts['audio'] = self.audio_scaler.fit_transform(parts['audio'])
         elif scale_utt:
@@ -183,8 +216,9 @@ class SimpleData(object):
             parts_val['audio'] = self.audio_scaler.transform(parts_val['audio'])
         elif scale_utt:
             parts_val['audio'] = scale_utterance(parts_val['audio'])
+        parts_val['speaker_id'] = self.speaker_encoder.transform(parts_val['speaker'])
         self.data['valid'] = outsidein(parts_val)
-        self.batcher = Batcher(self.mapper, pad_end=False, visual=visual, erasure=erasure)
+        self.batcher = Batcher(self.mapper, pad_end=False, visual=visual, erasure=erasure, sigma=sigma, noise_tied=noise_tied)
 
     def shuffled(self, xs):
         if not self.shuffle:
@@ -249,7 +283,8 @@ def arrange(data, tokenize=words, limit=None, speakers=None):
                        'tokens_out': toks,
                        'audio':       sent.get('audio'),
                        'img':        image.get('feat'),
-                       'speaker':   speaker  }
+                       'speaker':   speaker
+                        }
 
 
 def insideout(ds):

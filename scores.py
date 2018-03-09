@@ -24,7 +24,7 @@ def correlate(args):
     os.chdir(args.dir)
 
     print("epoch r")
-    for i in range(1,26):
+    for i in range(0,26):
        try:
           data = numpy.load("scores.{}.npy".format(i))
           print(i, round(data[0], 3))
@@ -35,7 +35,7 @@ def retrieve(args):
     os.chdir(args.dir)
     
     print("epoch R@1 R@5 R@10 rank")
-    for i in range(1,26):
+    for i in range(0,26):
         try:
             data = numpy.load("scores.{}.npy".format(i)).item(0)
             recall = data['recall']

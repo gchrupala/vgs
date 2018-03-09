@@ -16,18 +16,22 @@ from sklearn.metrics.pairwise import cosine_similarity
 import scipy.stats
 
 def run_train(data, prov, model_config, run_config, eval_config):
-
+    runid = ''
     if run_config.get('resume'):
         raise NotImplementedError
     else:
         last_epoch = 0
         model = bundle.GenericBundle(dict(scaler=data.scaler,
                                            batcher=data.batcher), model_config, run_config['task'])
-    if run_config['pretrained_encoder']:
-       pretrained = bundle.load(model_config['pretrained_path'])
-       print("Pretrained encoder loaded")
-       model.task.Encode = pretrained.task.Encode        
-       print("Encoder replaced")
+    if run_config.get('pretrained_encoder') or run_config.get('pretrained_audio'):
+       pretrained = bundle.load(model_config['pretrained_path'])    
+       print("Pretrained model loaded")
+       if run_config.get('pretrained_encoder'):
+           model.task.Encode = pretrained.task.Encode
+           print("Encoder replaced")
+       if run_config.get('pretrained_audio'):
+           model.task.Audio = pretrained.task.Audio
+           print("Audio replaced")
     model.task.cuda()
     model.task.train()
 
@@ -117,6 +121,10 @@ def run_train(data, prov, model_config, run_config, eval_config):
 
     optimizer = optim.Adam(model.task.parameters(), lr=model.task.config['lr'])
     optimizer.zero_grad()
+    scores = epoch_eval(mode=eval_config.get('mode', 'image'), 
+                            para=eval_config.get('para', False), 
+                            flickr=eval_config.get('flickr', False))
+    numpy.save('scores.0.npy', scores)
     for epoch in range(last_epoch+1, run_config['epochs'] + 1):
         model.task.train()
         random.shuffle(data.data['train'])
@@ -130,9 +138,10 @@ def run_train(data, prov, model_config, run_config, eval_config):
                 _ = nn.utils.clip_grad_norm(model.task.parameters(), model.task.max_norm)
                 optimizer.step()
                 costs += Counter({'cost':loss.data[0], 'N':1})
-                print(epoch, j, j*data.batch_size, item.get('speaker', 'SPK'), "train", "".join([str(costs['cost']/costs['N'])]))
+                spk = item['speaker'][0] if len(set(item['speaker'])) == 1 else 'MIXED'
+                print(epoch, j, j*data.batch_size, spk, "train", "".join([str(costs['cost']/costs['N'])]))
                 if j % run_config['validate_period'] == 0:
-                        print(epoch, j, 0, "valid", "".join([str(numpy.mean(valid_loss()))]))
+                        print(epoch, j, 0, spk, "valid", "".join([str(numpy.mean(valid_loss()))]))
                 sys.stdout.flush()
         model.save(path='model.r{}.e{}.zip'.format(runid,epoch))
         scores = epoch_eval(mode=eval_config.get('mode', 'image'), 
