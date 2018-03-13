@@ -3,16 +3,16 @@
 import numpy
 from scipy.spatial.distance import cdist
 
-def paraphrase_ranking(vectors, group, ns=(1, 5, 10)):
+def paraphrase_ranking(vectors, group, ns=(1, 5, 10), metric='cosine'):
     """Rank sentences by projection and return evaluation metrics."""
-    return ranking(vectors, vectors, group, ns=ns, exclude_self=True)
+    return ranking(vectors, vectors, group, ns=ns, exclude_self=True, metric=metric)
 
-def ranking(candidates, vectors, correct, ns=(1, 5, 10), exclude_self=False):
+def ranking(candidates, vectors, correct, ns=(1, 5, 10), exclude_self=False, metric='cosine'):
     """Rank `candidates` in order of similarity for each vector and return evaluation metrics.
 
     `correct[i][j]` indicates whether for vector i the candidate j is correct.
     """
-    distances = cdist(vectors, candidates, metric='cosine')
+    distances = cdist(vectors, candidates, metric=metric)
     #distances = Cdist(batch_size=2**13)(vectors, candidates)
     result = {'ranks' : [] , 'precision' : {}, 'recall' : {}, 'overlap' : {} }
     for n in ns:
