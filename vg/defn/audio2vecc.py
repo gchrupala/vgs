@@ -12,6 +12,7 @@ from vg.defn.simple_encoder import Encoder
 from vg.scorer import Scorer, testing
 from collections import Counter
 import sys
+import json
 
 class Decoder(nn.Module):
     def __init__(self, size_feature, size, depth=1):
@@ -88,13 +89,12 @@ def experiment(net, data, prov, model_config, run_config):
     
     net.cuda()
     net.train()
-
-    costs = Counter()
-  
-
+    scorer = Scorer(prov, dict(split='val', tokenize=lambda x: x['audio'], batch_size=data.batch_size))
     net.optimizer.zero_grad()
     last_epoch = 0
-    for epoch in range(last_epoch+1, run_config['epochs'] + 1):
+    with open("result.json", "w") as out:
+      for epoch in range(last_epoch+1, run_config['epochs'] + 1):
+        costs = Counter()
         net.train()
         for _j, item in enumerate(data.iter_train_batches()):
                 j = _j + 1
@@ -109,6 +109,14 @@ def experiment(net, data, prov, model_config, run_config):
                     print(epoch, j, 0, name, spk, "valid", "".join([str(numpy.mean(valid_loss(task)))]))
                 sys.stdout.flush()
         torch.save(net, "model.{}.pkl".format(epoch))
+        with testing(net):
+            result = dict(epoch=epoch, rsa=scorer.rsa_image(net), 
+                                       para=scorer.retrieval_para(net))
+            if run_config.get('speaker_id', True):
+                 result['speaker_id']=scorer.speaker_id(net)
+            out.write(json.dumps(result))
+            out.write("\n")
+            out.flush()
     torch.save(net, "model.pkl")
 
 

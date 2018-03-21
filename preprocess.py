@@ -24,7 +24,7 @@ def main():
     mfcc_p.set_defaults(func=mfcc)
     mfcc_p.add_argument('--dataset',  help='Dataset to process: flickr8k, places, librispeech or semanticf8k')
     mfcc_p.add_argument('--output',   help='Path to file where output will be saved', default='mfcc.npy')
-    mfcc_p.add_argument('--synthetic', action='store_true')
+
 
     merge_p = commands.add_parser('merge')
     merge_p.set_defaults(func=merge)
@@ -120,6 +120,16 @@ def mfcc(args):
             return M
         root = "/exp/gchrupal/corpora/flickr_audio/"
         M = parse(open(root + "/wav2capt.txt"))
+    elif args.dataset == 'flickr8k_synth':
+        logging.info("Synthetic flickr8k dataset")
+        def parse(lines):
+            M = {}
+            for line in lines:
+                key, text = line.strip().split("\t")
+                M[key] = encode(text) + ".wav"
+            return M
+        root = "/home/gchrupal/vgs/data/flickr8k/synthetic/"
+        M = parse(open("/home/gchrupal/vgs/data/flickr8k/Flickr8k.token.txt"))
     elif args.dataset == "semanticf8k":
         f8k_root = "/exp/gchrupal/corpora/flickr_audio/wavs/"
         feats = {}
@@ -174,7 +184,10 @@ def mfcc(args):
     
     for key, wav in M.items():
             path =  root + "/" + wav
-            arr = extract_mfcc(path)
+            if args.dataset == 'flickr8k_synth':
+                arr = extract_mfcc(path, nfft=1024)
+            else:
+                arr = extract_mfcc(path)
             if arr is not None:
                 D[key] =arr
     np.save(args.output, D)
@@ -182,7 +195,7 @@ def mfcc(args):
 import time
 import timeout_decorator
 @timeout_decorator.timeout(5)
-def extract_mfcc(f, truncate=20):
+def extract_mfcc(f, truncate=20, nfft=512):
     #logging.info("Extracting features from {}".format(f))
     try:
         (sig, rate) = sf.read(f)
@@ -191,7 +204,7 @@ def extract_mfcc(f, truncate=20):
         logging.warning("Error reading file {}".format(f))
         return None      
     try:
-        mfcc_feat = psf.mfcc(sig[:max_len], rate)    
+        mfcc_feat = psf.mfcc(sig[:max_len], samplerate=rate, nfft=nfft)    
         return np.asarray(mfcc_feat, dtype='float32')
 
     except:

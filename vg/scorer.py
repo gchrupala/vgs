@@ -112,16 +112,17 @@ class Scorer:
         if net is None:
             pred = self.pred
             net = self.net
-        else:
-            pred = self.encode_sentences(net, self.sentence_data, batch_size=self.config['batch_size'])
+        else: 
+            with testing(net):
+                pred = self.encode_sentences(net, self.sentence_data, batch_size=self.config['batch_size'])
         X = pred
-        if net.mapper is not None:
+        if hasattr(net, 'mapper'):
             # FIXME do something reasonable here
             Z = numpy.array([ numpy.zeros((1)) for audio in self.sentence_data])
         else:
             Z = numpy.array([ audio.mean(axis=0) for audio in self.sentence_data])
         y = LabelEncoder().fit_transform([s['speaker'] for s in self.sentences])
-        C = [ 10**p for p in range(-2, 3) ]
+        C = [ 10**p for p in range(2, 3) ]
         X, X_test, Z, Z_test, y, y_test = train_test_split(X, Z, y, random_state=42)
         scores = dict(rep=[], mfcc=[])
         counts = numpy.array(list(self.speakers.values()))
@@ -139,31 +140,13 @@ class Scorer:
         return dict(maj=maj, rep=max(scores['rep']), mfcc=max(scores['mfcc']))
 
     def rsa_image(self, net=None, within=False):
-        if net is None:
-            net = self.net
-        with testing(net):
-            # Average RSA within speaker
-            if net is None:
-                net = self.net
-            if within:
-                s, t = 0, 0
-                for speaker in self.speakers:
-                    mask = numpy.array( [  s['speaker'] == speaker for s in self.sentences ])
-                    sentence_data = [ self.sentence_data[i] for i in range(len(self.sentences)) if mask[i]]
-                    pred = self.encode_sentences(net, sentence_data , batch_size=self.config['batch_size'])
-                    sim_pred = cosine_similarity(pred)
-                    sim_images = self.sim_images[mask,:][:,mask]
-                    result = scipy.stats.pearsonr(triu(sim_images), triu(sim_pred))
-                    if self.speakers[speaker] > 2:
-                        s += self.speakers[speaker] * result[0]
-                        t += self.speakers[speaker]
-                within_rsa = s/t
             # Full RSA
             if net is None:
                 pred = self.pred
             else:
-                pred = self.encode_sentences(net, self.sentence_data, batch_size=self.config['batch_size'])
-            if net.mapper is not None:
+                with testing(net):
+                   pred = self.encode_sentences(net, self.sentence_data, batch_size=self.config['batch_size'])
+            if hasattr(net, 'mapper'):
                 # FIXME do something reasonable here
                 mfcc = numpy.array([ numpy.zeros((1)) for audio in self.sentence_data])
             else:
@@ -180,14 +163,12 @@ class Scorer:
             return result
 
     def retrieval(self, net=None):
-        if net is None:
-            net = self.net
-        with testing(net):
             img_fs = encode_images(net, [ s['feat'] for s in self.images ])
             if net is None:
                 pred = self.pred
             else:
-                pred = self.encode_sentences(net, self.sentence_data, batch_size=self.config['batch_size'])
+                with testing(net):
+                    pred = self.encode_sentences(net, self.sentence_data, batch_size=self.config['batch_size'])
 
             result = {}
             ret = ranking(img_fs, pred, self.correct_img, ns=(1,5,10), exclude_self=False)
@@ -195,16 +176,14 @@ class Scorer:
             result['recall@5'] = numpy.mean(ret['recall'][5])
             result['recall@10'] = numpy.mean(ret['recall'][10])
             result['medr'] = numpy.median(ret['ranks'])
-        return result
+            return result
     
     def retrieval_para(self, net=None):
-        if net is None:
-            net = self.net
-        with testing(net):
             if net is None:
                 pred = self.pred
             else:
-                pred = self.encode_sentences(net, self.sentence_data, batch_size=self.config['batch_size'])
+                with testing(net):
+                   pred = self.encode_sentences(net, self.sentence_data, batch_size=self.config['batch_size'])
 
             result = {}
             ret = paraphrase_ranking(pred, self.correct_para, ns=(1,5,10))
@@ -212,7 +191,7 @@ class Scorer:
             result['recall@5'] = numpy.mean(ret['recall'][5])
             result['recall@10'] = numpy.mean(ret['recall'][10])
             result['medr'] = numpy.median(ret['ranks'])
-        return result
+            return result
     
 def rer(hi, lo):
     return ((1-lo)-(1-hi))/(1-lo)

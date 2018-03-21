@@ -64,7 +64,7 @@ def vector_padder(vecs):
 
 class Batcher(object):
 
-    def __init__(self, mapper, pad_end=False, visual=True, erasure=(5,5), sigma=None, noise_tied=False):
+    def __init__(self, mapper, pad_end=False, visual=True, erasure=(5,5), sigma=None, noise_tied=False, midpoint=False):
         autoassign(locals())
         self.BEG = self.mapper.BEG_ID
         self.END = self.mapper.END_ID
@@ -108,11 +108,17 @@ class Batcher(object):
         target_prev_t = mb_target_t[:,0:-1]
         target_v = numpy.array([ x['img'] for x in gr ], dtype='float32')
         audio = vector_padder([ x['audio'] for x in gr ]) if gr[0]['audio']  is not None else None
-        mid = midpoint(audio.shape[1] , max(L_aud) - int(numpy.median(L_aud)))
+        if self.midpoint:
+            mid = midpoint(audio.shape[1] , max(L_aud) - int(numpy.median(L_aud)))
+        else:
+            mid = audio.shape[1] // 2
         gap = numpy.random.randint(self.gap_low, self.gap_high, 1)[0]
         audio_beg = audio[:, :mid - gap, :]
         audio_end = audio[:, mid + gap:, :]
-        mid = midpoint(inp.shape[1], max(L_tok) - int(numpy.median(L_tok)))
+        if self.midpoint:
+            mid = midpoint(inp.shape[1], max(L_tok) - int(numpy.median(L_tok)))
+        else:
+            mid = inp.shape[1] // 2
         if gap >= mid: # avoid empty arrays
             inp_beg = inp[:, :mid]
             inp_end = inp[:, mid:]
@@ -176,7 +182,7 @@ class SimpleData(object):
     """Training / validation data prepared to feed to the model."""
     def __init__(self, provider, tokenize=words, min_df=10, scale=True, scale_input=False, scale_utt=False,
                 batch_size=64, shuffle=False, limit=None, curriculum=False, by_speaker=False, val_vocab=False,
-                visual=True, erasure=5, sigma=None, noise_tied=False, speakers=None):
+                visual=True, erasure=5, midpoint=False, sigma=None, noise_tied=False, speakers=None):
         autoassign(locals())
         self.data = {}
         self.mapper = IdMapper(min_df=self.min_df)
@@ -218,7 +224,7 @@ class SimpleData(object):
             parts_val['audio'] = scale_utterance(parts_val['audio'])
         parts_val['speaker_id'] = self.speaker_encoder.transform(parts_val['speaker'])
         self.data['valid'] = outsidein(parts_val)
-        self.batcher = Batcher(self.mapper, pad_end=False, visual=visual, erasure=erasure, sigma=sigma, noise_tied=noise_tied)
+        self.batcher = Batcher(self.mapper, pad_end=False, visual=visual, erasure=erasure, sigma=sigma, noise_tied=noise_tied, midpoint=midpoint)
 
     def shuffled(self, xs):
         if not self.shuffle:
