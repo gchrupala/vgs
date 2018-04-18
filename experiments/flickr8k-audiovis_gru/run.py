@@ -27,6 +27,6 @@ def audio(sent):
     return sent['audio']
 
 eval_config = dict(tokenize=audio, split='val', task=D.Visual, batch_size=batch_size,
-                   epochs=epochs, encode_sentences=D.encode_sentences)
+                   epochs=epochs, encode_sentences=D.encode_sentences, encode_images=D.encode_images)
 
 E.run_train(data, prov, model_config, run_config, eval_config)
