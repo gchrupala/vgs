@@ -59,7 +59,7 @@ def vector_padder(vecs):
         #for vec in vecs:
         #    assert len(vec.shape) == 2, "Broken vector {}".format(vec)
                 
-        return numpy.array([ numpy.vstack([numpy.zeros((max_len-len(vec),vec.shape[1])) , vec])
+        return numpy.array([ numpy.vstack([numpy.zeros((max_len-len(vec), vec.shape[1])) , vec])
                             for vec in vecs ], dtype='float32')
 
 class Batcher(object):
@@ -235,7 +235,7 @@ class SimpleData(object):
             return zs
 
 
-    def iter_train_batches(self):
+    def iter_train_batches(self, reshuffle=False):
         # sort data by length
         if self.curriculum:
             data = [self.data['train'][i] for i in numpy.argsort([len(x['tokens_in']) for x in self.data['train']])]
@@ -245,6 +245,8 @@ class SimpleData(object):
             for x in randomized(by_speaker(self.batcher, data)):
                 yield x
         else:                    
+            if reshuffle:
+                data = randomized(self.data['train'])
             for bunch in util.grouper(data, self.batch_size*20):
                 bunch_sort = [ bunch[i] for i in numpy.argsort([len(x['tokens_in']) for x in bunch]) ]
                 for item in util.grouper(bunch_sort, self.batch_size):

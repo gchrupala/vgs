@@ -202,7 +202,6 @@ def triu(x):
     return x[numpy.triu(ones, k=1) == 1]
 
 def encode_sentences(task, audios, batch_size=128):
-
     return numpy.vstack([ task.predict(
                             torch.autograd.Variable(torch.from_numpy(
                                 vector_padder(batch))).cuda()).data.cpu().numpy()
