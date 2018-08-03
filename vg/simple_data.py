@@ -24,6 +24,9 @@ def compressed(sentence):
 def phonemes(sentence):
     return [ pho for pho in sentence['ipa'] if pho != "*" ]
 
+def transcription(sentence):
+    return list(sentence['transcription'])
+
 class NoScaler():
     def __init__(self):
         pass
@@ -100,21 +103,23 @@ class Batcher(object):
         - target string
         """
         L_tok =  [len(x['tokens_in']) for x in gr]
-        L_aud =  [len(x['audio']) for x in gr ]
         mb_inp = self.padder([x['tokens_in'] for x in gr])
         mb_target_t = self.padder([x['tokens_out'] for x in gr])
         inp = mb_inp[:,1:]
         target_t = mb_target_t[:,1:]
         target_prev_t = mb_target_t[:,0:-1]
         target_v = numpy.array([ x['img'] for x in gr ], dtype='float32')
+        gap = numpy.random.randint(self.gap_low, self.gap_high, 1)[0]
+       
+        L_aud =  [len(x['audio']) for x in gr ]
         audio = vector_padder([ x['audio'] for x in gr ]) if gr[0]['audio']  is not None else None
         if self.midpoint:
             mid = midpoint(audio.shape[1] , max(L_aud) - int(numpy.median(L_aud)))
         else:
             mid = audio.shape[1] // 2
-        gap = numpy.random.randint(self.gap_low, self.gap_high, 1)[0]
         audio_beg = audio[:, :mid - gap, :]
         audio_end = audio[:, mid + gap:, :]
+
         if self.midpoint:
             mid = midpoint(inp.shape[1], max(L_tok) - int(numpy.median(L_tok)))
         else:

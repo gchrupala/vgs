@@ -90,6 +90,7 @@ class Scorer:
         self.rsa_image_data = []
         self.images = []
         self.encode_sentences = config.get('encode_sentences', encode_sentences)
+        self.encode_images = config.get('encode_images', encode_images)
         for image in prov.iterImages(split=config['split']):
            self.images.append(image)
            for sent in image['sentences']:
@@ -146,10 +147,12 @@ class Scorer:
             else:
                 with testing(net):
                    pred = self.encode_sentences(net, self.sentence_data, batch_size=self.config['batch_size'])
-            if hasattr(net, 'mapper'):
+            if hasattr(net, 'mapper') and net.mapper is not None:
                 # FIXME do something reasonable here
+                #print("This is a text net")
                 mfcc = numpy.array([ numpy.zeros((1)) for audio in self.sentence_data])
             else:
+                #print("This is an audio net")
                 mfcc = numpy.array([ audio.mean(axis=0) for audio in self.sentence_data])
             sim_mfcc = cosine_similarity(mfcc)
             sim_pred = cosine_similarity(pred)
@@ -163,7 +166,7 @@ class Scorer:
             return result
 
     def retrieval(self, net=None):
-            img_fs = encode_images(net, [ s['feat'] for s in self.images ])
+            img_fs = self.encode_images(net, [ s['feat'] for s in self.images ])
             if net is None:
                 pred = self.pred
             else:

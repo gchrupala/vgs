@@ -8,10 +8,10 @@ setup(name='vgs',
       author='Grzegorz Chrupała',
       author_email='g.chrupala@uvt.nl',
       license='MIT',
-      packages=['onion','vg'],
+      packages=['onion','vg', 'vg.defn'],
       zip_safe=False,
       install_requires=[
-          'torch',
+          'torch==0.3.1',
           'torchvision',
           'sklearn',
           'scipy'
