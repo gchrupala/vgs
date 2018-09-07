@@ -12,6 +12,7 @@ from onion import rhn, attention, conv
 from vg.simple_data import vector_padder
 from vg.scorer import Scorer, testing
 from vg.defn.encoders import TextEncoderTop, TextEncoderBottom, SpeechEncoderBottom, SpeechEncoderTop, ImageEncoder
+from vg.defn.decoders import DecoderWithAttn
 from collections import Counter
 import sys
 import itertools
@@ -109,6 +110,30 @@ class TextImage(nn.Module):
             rep = self.TextEncoderTop(self.TextEncoderBottom(text))
         return rep
 
+class SpeechTranscriber(nn.Module):
+
+    def __init__(self, speech_encoder, config):
+        super(SpeechTranscriber, self).__init__()
+        self.config = config
+        self.SpeechEncoderBottom = speech_encoder
+        self.SpeechEncoderTop = SpeechEncoderTop(**config['SpeechEncoderTop'])
+        self.TextDecoder = DecoderWithAttn(**config['TextDecoder'])
+        self.optimizer = optim.Adam(self.parameters(), lr=config['lr'])
+
+    def cost(self, speech, target, target_prev):
+        states, rep = self.SpeechEncoderTop.states(self.SpeechEncoderBottom(speech))
+        target_logits = self.TextDecoder(states, rep, target_prev)
+        cost =  F.cross_entropy(target_logits.view(target_logits.size(0)*target_logits.size(1),-1), 
+                                target.view(target.size(0)*target.size(1)))
+        return cost            
+
+    def args(self, item):
+        return (item['audio'], item['target_t'].astype('int64'), item['target_prev_t'].astype('int64'))
+
+    def test_cost(self, *args):
+        with testing(self):
+            return self.cost(*args)
+
 class Net(nn.Module):
 
     def __init__(self, config):
@@ -121,6 +146,8 @@ class Net(nn.Module):
         self.SpeechImage = SpeechImage(self.SpeechEncoderBottom, config['SpeechImage'])
         self.TextImage   = TextImage(self.TextEncoderBottom, config['TextImage']) \
                                 if config.get('TextImage')  else None
+        self.SpeechTranscriber = SpeechTranscriber(self.SpeechEncoderBottom, config['SpeechTranscriber']) \
+                                if config.get('SpeechTranscriber') else None
   
     def encode_images(self, images):
         with testing(self):
@@ -166,13 +193,14 @@ def experiment(net, data, run_config):
 
     with open("result.json", "w") as out:
       for epoch in range(last_epoch+1, run_config['epochs'] + 1):
-        costs = dict(SpeechText=Counter(), SpeechImage=Counter(), TextImage=Counter())
+        costs = dict(SpeechText=Counter(), SpeechImage=Counter(), TextImage=Counter(), SpeechTranscriber=Counter())
         
         for _j, items in enumerate(zip(data['SpeechImage'].iter_train_batches(reshuffle=True), 
                                        data['SpeechText'].iter_train_batches(reshuffle=True),
-                                       data['TextImage'].iter_train_batches(reshuffle=True))):
+                                       data['TextImage'].iter_train_batches(reshuffle=True),
+                                       data['SpeechTranscriber'].iter_train_batches(reshuffle=True))):
             j = _j + 1  
-            item = dict(SpeechImage=items[0], SpeechText=items[1], TextImage=items[2])
+            item = dict(SpeechImage=items[0], SpeechText=items[1], TextImage=items[2], SpeechTranscriber=items[3])
             for name, task in run_config['tasks']:
                 spk = item[name]['speaker'][0] if len(set(item[name]['speaker'])) == 1 else 'MIXED'
                 args = task.args(item[name])

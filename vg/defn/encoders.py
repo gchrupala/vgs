@@ -79,6 +79,8 @@ class SpeechEncoder(nn.Module):
         return l2normalize(self.Attn(out))
 
 
+        
+
 class SpeechEncoderBottom(nn.Module):
     def __init__(self, size_vocab, size, depth=1, filter_length=6, filter_size=64, stride=2, dropout_p=0.0):
         super(SpeechEncoderBottom, self).__init__()
@@ -116,6 +118,13 @@ class SpeechEncoderTop(nn.Module):
             out = x
         return l2normalize(self.Attn(out))
 
+    def states(self, x):
+        if self.depth > 0:
+            h0 = self.h0.expand(self.depth, x.size(0), self.size).cuda()
+            out, _last = self.RNN(self.Dropout(x), h0)
+        else:
+            out = x
+        return out, l2normalize(self.Attn(out))
     
 
 class ImageEncoder(nn.Module):
