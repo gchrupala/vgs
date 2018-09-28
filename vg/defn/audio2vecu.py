@@ -1,3 +1,4 @@
+# Pytorch version of imaginet.audiovis_rhn
 import numpy
 import numpy as np
 import torch.nn as nn
@@ -8,51 +9,69 @@ import torch.optim as optim
 import torch.autograd
 from onion import rhn, attention, conv
 from vg.simple_data import vector_padder
-from vg.defn.simple_encoder import Encoder
-from vg.scorer import Scorer, testing
-from collections import Counter
-import sys
+
+
+
+class Encoder(nn.Module):
+
+    def __init__(self, size_vocab, size, depth=1, 
+                 filter_length=6, filter_size=64, stride=2, residual=False):
+        super(Encoder, self).__init__()
+        util.autoassign(locals())
+        self.h0 = torch.autograd.Variable(torch.zeros(self.depth, 1, self.size))
+
+        self.Conv = conv.Convolution1D(self.size_vocab, self.filter_length, self.filter_size, stride=self.stride, padding=0)
+
+        self.RNN = nn.GRU(self.filter_size, self.size, self.depth, batch_first=True)
+
+    def forward(self, input):
+
+        out, last = self.RNN(self.Conv(input), self.h0.expand(self.depth, input.size(0), self.size).cuda())
+        return out
 
 class Decoder(nn.Module):
-    def __init__(self, size_feature, size, depth=1):
+    def __init__(self, size_vocab, size, depth=1):
         super(Decoder, self).__init__()
         util.autoassign(locals())
         self.h0 = torch.autograd.Variable(torch.zeros(self.depth, 1, self.size))
-        self.RNN = nn.GRU(self.size_feature, self.size, self.depth, batch_first=True)
-        self.Proj = nn.Linear(self.size, self.size_feature)
+        self.RNN = nn.GRU(self.size, self.size, self.depth, batch_first=True)
+        self.Proj = nn.Linear(self.size, self.size_vocab)
         
     def forward(self, rep, target):
-        R = rep.unsqueeze(1).expand(-1, target.size(1), -1).cuda()      
+
+        R = rep.unsqueeze(1).expand(-1, target.size(1), -1).cuda()
+        
         H0 = self.h0.expand(self.depth, target.size(0), self.size).cuda()        
         out, last = self.RNN(R, H0)
         pred = self.Proj(out)
         return pred
-
-def step(task, *args):
-    loss = task.train_cost(*args)
-    task.optimizer.zero_grad()
-    loss.backward()
-    _ = nn.utils.clip_grad_norm(task.parameters(), task.config['audio']['max_norm'])
-    return loss
-
 
 class Audio(nn.Module):
 
     def __init__(self, config):
         super(Audio, self).__init__()
         util.autoassign(locals())
-        self.Encode = Encoder(**config['encoder'])
+        # FIXME FIXME ADD gradient clipping!
+        #self.make_updater = lambda: optim.Adam(self.parameters(), lr=config['lr'])
+        self.max_norm = config['max_norm']
+        self.Encode = Encoder(config['size_vocab'],
+                              config['size'],
+                              filter_length=config.get('filter_length', 6),
+                              filter_size=config.get('filter_size', 1024),
+                              stride=config.get('stride', 3),
+                              depth=config.get('depth', 1),
+                              residual=config.get('residual', False))
+        self.Attn   = attention.SelfAttention(config['size'], size=config.get('size_attn', 512))
 
-        self.Decode1 = Decoder(config['audio']['size_feature'], config['audio']['size'])
+        self.Decode1 = Decoder(config['size_vocab'], 
+                               config['size'])
 
-        self.Decode3 = Decoder(config['audio']['size_feature'], config['audio']['size'])
-        self.optimizer = optim.Adam(self.parameters(), lr=config['audio']['lr'])
+        self.Decode3 = Decoder(config['size_vocab'], 
+                               config['size'])
 
-    def step(self, *args):
-        return step(self, *args)
 
     def forward(self, speech2):
-        rep = F.normalize(self.Encode(speech2), p=2, dim=1)
+        rep = F.normalize(self.Attn(self.Encode(speech2)), p=2, dim=1)
         return rep
     
     def cost(self, speech1_prev, speech1, rep, speech3_prev, speech3):
@@ -65,53 +84,44 @@ class Audio(nn.Module):
         return self.cost(speech1_prev, speech1, rep, speech3_prev, speech3)
 
     def test_cost(self, speech1_prev, speech1, speech2, speech3_prev, speech3):
-        with testing(self):
-            self.eval()
-            rep = self(speech2)
-            return self.cost(speech1_prev, speech1, rep, speech3_prev, speech3)
+        mode = self.training
+        self.eval()
+        rep = self(speech2)
+        cost = self.cost(speech1_prev, speech1, rep, speech3_prev, speech3)
+        self.training = mode
+        return cost
 
     def predict(self, speech):
-        with testing(self):
-            return self(speech)
-
+        mode = self.training
+        self.eval()
+        pred = self(speech)
+        self.training = mode
+        return pred
 
     def args(self, item):
         return (item['audio_1_prev'], item['audio_1'], item['audio_2'], item['audio_3_prev'], item['audio_3'])
 
 
-def experiment(net, data, prov, model_config, run_config):
-    def valid_loss(task):
-        result = []
-        for item in data.iter_valid_batches():
-            args = task.args(item)
-            args = [torch.autograd.Variable(torch.from_numpy(x), volatile=True).cuda() for x in args ]
-            result.append(task.test_cost(*args).data.cpu().numpy())
-        return result
-    
-    net.cuda()
-    net.train()
+
+def encode_sentences(model, audios, batch_size=128):
+    """Project audios to the joint space using model.
+
+    For each audio returns a vector.
+    """
+    return numpy.vstack([ model.task.predict(torch.autograd.Variable(torch.from_numpy(vector_padder(batch))).cuda()).data.cpu().numpy()
+                            for batch in util.grouper(audios, batch_size) ])
+
+def iter_layer_states(model, audios, batch_size=128):
+    """Pass audios through the model and for each audio return the state of each timestep and each layer."""
+
+    lens = (numpy.array(map(len, audios)) + model.config['filter_length']) // model.config['stride']
+    rs = (r for batch in util.grouper(audios, batch_size) for r in model.task.pile(vector_padder(batch)))
+    for (r,l) in itertools.izip(rs, lens):
+         yield r[-l:,:,:]
+
+def layer_states(model, audios, batch_size=128):
+    return list(iter_layer_states(model, audios, batch_size=128))
 
 
-  
-
-    net.optimizer.zero_grad()
-    last_epoch = 0
-    for epoch in range(last_epoch+1, run_config['epochs'] + 1):
-        costs = Counter()
-        net.train()
-        for _j, item in enumerate(data.iter_train_batches()):
-                j = _j + 1
-                name = "Aud"; task = net
-                spk = item['speaker'][0] if len(set(item['speaker'])) == 1 else 'MIXED'
-                args = task.args(item)
-                args = [torch.autograd.Variable(torch.from_numpy(x)).cuda() for x in args ]
-                loss = task.optimizer.step(lambda: task.step(*args))
-                costs += Counter({'cost':loss.data[0], 'N':1})
-                print(epoch, j, j*data.batch_size, name, spk, "train", "".join([str(costs['cost']/costs['N'])]))
-                if j % run_config['validate_period'] == 0:
-                    print(epoch, j, 0, name, spk, "valid", "".join([str(numpy.mean(valid_loss(task)))]))
-                sys.stdout.flush()
-        torch.save(net, "model.{}.pkl".format(epoch))
-    torch.save(net, "model.pkl")
-
-
+def symbols(model):
+    return model.batcher.mapper.ids.decoder
