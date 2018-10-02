@@ -143,7 +143,8 @@ class Net(nn.Module):
                                 if config.get('TextEncoderBottom') else None
         self.SpeechText  = SpeechText(self.SpeechEncoderBottom, self.TextEncoderBottom, config['SpeechText'])  \
                                 if config.get('SpeechText') else None
-        self.SpeechImage = SpeechImage(self.SpeechEncoderBottom, config['SpeechImage'])
+        self.SpeechImage = SpeechImage(self.SpeechEncoderBottom, config['SpeechImage']) \
+                                if config.get('SpeechText') else None
         self.TextImage   = TextImage(self.TextEncoderBottom, config['TextImage']) \
                                 if config.get('TextImage')  else None
         self.SpeechTranscriber = SpeechTranscriber(self.SpeechEncoderBottom, config['SpeechTranscriber']) \
@@ -224,13 +225,16 @@ def experiment(net, data, run_config):
         torch.save(net, "model.{}.pkl".format(epoch))
 
         with testing(net):
-            result = dict(epoch=epoch, 
-                          rsa=scorer.rsa_image(net), 
-                          retrieval=scorer.retrieval(net), 
-                          speaker_id=scorer.speaker_id(net))
-            out.write(json.dumps(result))
-            out.write("\n")
-            out.flush()
+            if run_config.get('skip_scoring'):
+                pass
+            else:
+                result = dict(epoch=epoch, 
+                              rsa=scorer.rsa_image(net), 
+                              retrieval=scorer.retrieval(net), 
+                              speaker_id=scorer.speaker_id(net))
+                out.write(json.dumps(result))
+                out.write("\n")
+                out.flush()
 
 
     torch.save(net, "model.pkl")

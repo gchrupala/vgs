@@ -1,7 +1,7 @@
 def search(prefixes, getnext, stop, value, K=1):
     """Beam search: maintain a collection of K prefixes, sorted by value."""
     def extend(prefix):
-        return [ prefix + [item] for item in getnext(prefix)]
+        return [ prefix + ([] if stop(prefix) else [item]) for item in getnext(prefix)] #FIXME this doesn't seem to work properly
     extended = [   item  for prefix in prefixes for item in extend(prefix) ]
     reranked = list(reversed(sorted(extended, key=value)))
     pruned =   reranked[:K]
@@ -27,12 +27,10 @@ def transcribe(net, audio, K=1, BEG=0, END=1, maxlen=20):
 
     def getnext(prefix):
         ids = [ i for _, i in prefix ]
-        last = ids[-1]
-        print(ids)
-        prev = torch.autograd.Variable(torch.LongTensor([[last]])).cuda()
-        logits = task.TextDecoder(states, rep, prev).squeeze()
-        logprobs = torch.nn.functional.log_softmax(logits, dim=0)
-        return [ (val, i) for (i, val) in enumerate(logprobs.cpu().data.numpy()) if i != BEG ]
+        prev = torch.autograd.Variable(torch.LongTensor([ids])).cuda()
+        logits = task.TextDecoder(states, rep, prev)
+        logprobs = torch.nn.functional.log_softmax(logits[0,-1,:], dim=0)
+        return [ (val, i) for (i, val) in enumerate(logprobs.cpu().data.numpy()) ]
  
 
     prefixes = [[(0.0, BEG)]]
@@ -50,20 +48,21 @@ def main():
     #net = torch.load("experiments/s2-t1-s2i2-s2t0-t2s0-s2d0-d1-joint-f/model.19.pkl")
     net.SpeechTranscriber.TextDecoder.Decoder.RNN.flatten_parameters()
     net.SpeechTranscriber.SpeechEncoderBottom.RNN.flatten_parameters()
-    batches = data_flickr.iter_valid_batches() 
+    #batches = data_flickr.iter_valid_batches() 
+    batches = data_flickr.iter_train_batches()
     first = next(batches) 
     texts = list(data_flickr.mapper.inverse_transform(first['input']))
     args = net.SpeechTranscriber.args(first) 
     args = [torch.autograd.Variable(torch.from_numpy(x)).cuda() for x in args ]
     audio, target_t, target_prev_t = args
-    for j in range(10):
+    for j in range(16):
         print(''.join(texts[j]))
-        for seq in transcribe(net, audio[j:j+1], K=5, maxlen=20):
+        for seq in transcribe(net, audio[j:j+1], K=5, maxlen=25):
             
             vals, ids = zip(*seq)
             
             chars = list(data_flickr.mapper.inverse_transform([ids]))[0]
-            text =  ''.join([ '_' if char == '<BEG>' else '|' if char == '<END>' else char for char in chars])
+            text =  ''.join([ '_' if char == '<BEG>' else char for char in chars])
             print("{:.2f} {}".format(sum(vals), text))
         print()
 
