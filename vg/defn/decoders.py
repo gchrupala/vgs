@@ -42,10 +42,10 @@ class SimpleDecoder(nn.Module):
 
 class DecoderWithAttn(nn.Module):
 
-    def __init__(self, size, size_target_vocab, depth=1):
+    def __init__(self, size, size_target_vocab, size_embed=64, depth=1):
         super(DecoderWithAttn, self).__init__()
         util.autoassign(locals())
-        self.Decoder = SimpleDecoder(self.size_target_vocab, self.size, depth=self.depth)
+        self.Decoder = SimpleDecoder(self.size_target_vocab, self.size, size_embed=self.size_embed, depth=self.depth)
         self.BAttn = BilinearAttention(self.size)
         self.Proj = nn.Linear(self.size * 2, self.size_target_vocab)
     
@@ -96,4 +96,19 @@ class UncondDecoder(nn.Module):
         pred = self.Proj(out)
         return pred
 
+
+
+def beam_search(net, audio, beg=0, end=1):
+    # Encode speech signal
+    states, rep = net.SpeechTranscriber.SpeechEncoderTop.states(net.SpeechTranscriber.SpeechEncoderBottom(audio))
+    # feed states and rep, plus BEG token to decoder
+    # get top N choices for next letter
+    # for each N:
+        # feed states and rep, plus guess to decoder
+        # get top N choices for next letter
+        # extend beam 
+    # prune prefixes
+    # go to next position
+       
+    raise NotImplementedError
 
